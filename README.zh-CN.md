@@ -37,9 +37,9 @@ Codex 和 Claude Code 读写的是同一个项目库：一条队列、一个数�
 **安装**——复制下面这段（右侧有复制按钮）直接粘贴给你的 agent（Codex、Claude Code 或任意编程 agent），它会读安装指南并动手：
 
 ```
-你正在从这个仓库安装 Project Memory 系统。请按以下要求执行：
+你正在安装 Project Memory 系统。源码仓库在 https://github.com/JC-SYSU/project-memory 。请按以下要求执行：
 
-1. 把本仓库克隆到合适位置并 cd 进入。
+1. 把该仓库克隆到合适位置并 cd 进入。如果无法克隆，直接阅读安装规范：https://raw.githubusercontent.com/JC-SYSU/project-memory/main/INSTALL.md
 2. 完整阅读 INSTALL.md（想看中文版就读 INSTALL.zh-CN.md），并逐节执行：探测本机并确定安装形态（0.5 节）、安装依赖、验证导入、注册 Codex 集成；若检测到 Claude Code 还要注册 CC 兼容层（3.5 节）；用 scripts/setup_env.py 配置模型服务环境变量（只需填 URL 和 Key）并跑它的连通性测试。
 3. 任何向本仓库以外写入的步骤（hooks.json、config.toml、settings.json、.claude.json、shell rc 文件、launchd）或消耗模型配额的步骤（连通性测试、6.5 节的历史会话回填），先把你将要做的展示给我，等我确认后再执行——回填前要把扫描统计结果也给我看。
 4. 全部完成后运行验收清单（「验收清单」节），并把每一项结果报告给我。有失败的项，先按故障排查表（第 8 节）修复再汇报。
