@@ -1,0 +1,8 @@
+# Append to ~/.codex/config.toml (merge keys with your existing [mcp_servers.*] stanzas).
+# {{INSTALL_DIR}} and {{PYTHON}} are filled in by scripts/install_codex.py; edit manually if preferred.
+
+[mcp_servers.memory_palace_recall]
+command = "{{PYTHON}}"
+args = ["-B", "{{INSTALL_DIR}}/src/memory_palace_recall_mcp_server.py"]
+startup_timeout_sec = 10.0
+tool_timeout_sec = 30.0

@@ -1,0 +1,28 @@
+{
+  "description": "Project Memory Codex hooks (example).",
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "^(manual|auto)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}} -B {{INSTALL_DIR}}/src/codex_precompact_hook_runner.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}} -B {{INSTALL_DIR}}/src/codex_recall_prompt_hook_runner.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

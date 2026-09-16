@@ -1,0 +1,37 @@
+{
+  "注释": "Claude Code 接入示例：hooks 段写入 ~/.claude/settings.json（或项目 .claude/settings.local.json）的 \"hooks\" 键下；mcpServers 段写入 ~/.claude.json 的 \"mcpServers\" 键下。占位符：{{PYTHON}}=解释器绝对路径，{{INSTALL_DIR}}=仓库绝对路径（cc_capture_hook_runner.py 会自动从自身位置推导宫殿 src，无需额外配置；指针目录可用环境变量 CC_MEMORY_MIRROR_ROOT 覆盖，默认 ~/.claude/memory-palace-sessions）。",
+  "hooks": {
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}} -B {{INSTALL_DIR}}/cc-integration/cc_capture_hook_runner.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}} -B {{INSTALL_DIR}}/cc-integration/cc_capture_hook_runner.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  },
+  "mcpServers": {
+    "memory-palace-recall": {
+      "type": "stdio",
+      "command": "{{INSTALL_DIR}}/cc-integration/cc_memory_palace_recall_wrapper.zsh",
+      "args": [],
+      "env": {}
+    }
+  }
+}

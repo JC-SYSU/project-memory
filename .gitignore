@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+
+# 本地数据（示例/导出目录与运行时产物）
+imports/
+*.sqlite
+*.sqlite3
+*.jsonl
+*.csv
+.env
+logs/
+state/
