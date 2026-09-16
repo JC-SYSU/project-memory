@@ -34,14 +34,16 @@ This suits people who keep returning to the same project over many sessions, and
 
 ## How to use
 
-**Install** — paste the block below into your agent (Codex, Claude Code, or any coding agent). The agent reads the INSTALL guide and does the work:
+**Install** — copy the block below (the copy button on the right) and paste it into your agent (Codex, Claude Code, or any coding agent). The agent reads the INSTALL guide and does the work:
 
-> You are installing the **Project Memory** system from this repository. Do the following:
->
-> 1. Clone this repository to a sensible location and `cd` into it.
-> 2. Read `INSTALL.md` in full (the Chinese version is `INSTALL.zh-CN.md` if preferred) and execute it step by step: probe the machine and pick the install profile (section 0.5), install dependencies, verify imports, register the Codex integration and — if Claude Code is present — the CC compatibility layer (section 3.5), configure the model-service environment variables via `scripts/setup_env.py` (only URL and API key are asked) and run its connectivity tests.
-> 3. Before any step that writes outside this repository (hooks.json, config.toml, settings.json, .claude.json, shell rc files, launchd) or consumes model quota (connectivity tests, historical-session backfill from section 6.5), show me what you are about to do and wait for my confirmation — including the survey output before backfilling.
-> 4. When everything is done, run the acceptance checklist (section "Acceptance checklist") and report each item's result to me. Anything that fails: fix it per the troubleshooting table (section 8) before reporting back.
+```
+You are installing the Project Memory system from this repository. Do the following:
+
+1. Clone this repository to a sensible location and cd into it.
+2. Read INSTALL.md in full (the Chinese version is INSTALL.zh-CN.md if preferred) and execute it step by step: probe the machine and pick the install profile (section 0.5), install dependencies, verify imports, register the Codex integration and — if Claude Code is present — the CC compatibility layer (section 3.5), configure the model-service environment variables via scripts/setup_env.py (only URL and API key are asked) and run its connectivity tests.
+3. Before any step that writes outside this repository (hooks.json, config.toml, settings.json, .claude.json, shell rc files, launchd) or consumes model quota (connectivity tests, historical-session backfill from section 6.5), show me what you are about to do and wait for my confirmation — including the survey output before backfilling.
+4. When everything is done, run the acceptance checklist (section "Acceptance checklist") and report each item's result to me. Anything that fails: fix it per the troubleshooting table (section 8) before reporting back.
+```
 
 If you prefer to install by hand, follow `INSTALL.md` directly.
 
