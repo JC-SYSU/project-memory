@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "rust-rewrite" / "src"
+SRC = ROOT / "src"
 for candidate in (SRC, str(ROOT / "tools")):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
