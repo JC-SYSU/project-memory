@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
-from .candidate_validator import validate_response
+from .candidate_validator import _validate_candidate, validate_response
 from .contracts import Window
 
 _PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "extraction_system.txt"
@@ -240,6 +240,104 @@ def _extract_usage(usage: Any) -> dict[str, int] | None:
     return out or None
 
 
+_FEEDBACK_MAX_ROUNDS = 2  # 初始请求后最多反馈修正轮数（总 Transport 调用 ≤ 1+该值）
+
+
+def _gen_title(summary: str) -> str:
+    """从 summary 首句生成 title（与 2026-10-02 批量修复同款规则）。"""
+    s = summary.strip().replace("\n", " ")
+    for sep in ("。", "；", "：", "，", ";", ","):
+        i = s.find(sep)
+        if 0 < i <= 50:
+            return s[:i]
+    return s[:50] + ("…" if len(s) > 50 else "")
+
+
+def _heal_validation(
+    validation: dict[str, Any], allowed: set[int]
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """确定性字段自愈（层 1）：缺 title 且 summary 完好 → 首句生成；
+    evidence 越界/非法 → 裁剪保序去重。自愈后逐条重过冻结校验器，
+    仍不过的保持原 invalid 项原样。返回 (新 validation, heal 记录)。"""
+    healed_notes: list[dict[str, Any]] = []
+    still_invalid: list[dict[str, Any]] = []
+    for item in validation.get("invalid_candidates", []):
+        cand = dict(item["raw_candidate"])
+        errors = item["errors"]
+        missing = {e.get("field") for e in errors if e.get("code") == "missing_field"}
+        bad_lines = any(
+            e.get("code") in ("evidence_outside_window", "invalid_evidence_line")
+            for e in errors
+        )
+        fixes: list[str] = []
+        if bad_lines and isinstance(cand.get("evidence_lines"), list):
+            seen: set[int] = set()
+            trimmed: list[int] = []
+            for n in cand["evidence_lines"]:
+                if isinstance(n, int) and n in allowed and n not in seen:
+                    seen.add(n)
+                    trimmed.append(n)
+            if trimmed != cand["evidence_lines"]:
+                cand["evidence_lines"] = trimmed
+                fixes.append("trim_evidence")
+        if "title" in missing and isinstance(cand.get("summary"), str) and cand["summary"].strip():
+            cand["title"] = _gen_title(cand["summary"])
+            fixes.append("gen_title")
+        if not fixes:
+            still_invalid.append(item)
+            continue
+        rev = _validate_candidate(item["index"], cand, allowed)
+        if rev["errors"]:
+            still_invalid.append(item)
+            continue
+        healed_notes.append({"index": item["index"], "fixes": fixes})
+        validation["valid_candidates"].append(rev)
+    validation["invalid_candidates"] = still_invalid
+    if healed_notes:
+        validation["heal_notes"] = healed_notes
+    return validation, healed_notes
+
+
+def _render_feedback(
+    invalid_candidates: list[dict[str, Any]], allowed: set[int]
+) -> str:
+    """把冻结校验器的逐候选错误翻译为给模型的修正反馈。"""
+    lines = ["Your previous submit_candidates call was rejected by mechanical validation. Errors:"]
+    for item in invalid_candidates:
+        idx = item["index"]
+        for e in item["errors"]:
+            code = e.get("code")
+            if code == "missing_field":
+                lines.append(f"- candidate #{idx}: missing required field '{e['field']}'")
+            elif code == "evidence_outside_window":
+                lines.append(
+                    f"- candidate #{idx}: evidence_lines contains {e.get('value')} which is NOT in allowed_source_lines"
+                )
+            elif code == "invalid_evidence_line":
+                lines.append(f"- candidate #{idx}: evidence_lines[{e.get('item_index')}] is not an integer")
+            else:
+                lines.append(f"- candidate #{idx}: {code} {json.dumps(e, ensure_ascii=False)[:120]}")
+    allowed_sorted = sorted(allowed)
+    lines.append(
+        "Fix ALL listed problems and re-submit the COMPLETE candidates array (every candidate, "
+        "changed or not) via submit_candidates. Each candidate must contain exactly: title (non-blank "
+        "string), summary (non-blank string), evidence_lines (non-empty array of integers, each an "
+        "exact member of allowed_source_lines). Keep already-valid candidates unchanged."
+    )
+    lines.append(f"allowed_source_lines = {json.dumps(allowed_sorted)}")
+    return "\n".join(lines)
+
+
+def _merge_usage(total: dict[str, int] | None, add: dict[str, int] | None) -> dict[str, int] | None:
+    if add is None:
+        return total
+    if total is None:
+        return dict(add)
+    for k, v in add.items():
+        total[k] = total.get(k, 0) + v
+    return total
+
+
 def extract_window(
     window: Window,
     runtime_config: RuntimeConfig,
@@ -248,12 +346,16 @@ def extract_window(
     timeout_seconds: float = 300.0,
     before_transport: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
-    """单次 Window 同步抽取。最多调用 Transport 一次，不重试、不 fallback。
+    """Window 同步抽取：请求 → 冻结校验 → 确定性自愈 → 反馈修正循环。
 
-    ``before_transport`` 为 W01-P01 窄回调：在 Prompt/请求体/URL 均已构造
-    后、``transport.post_json()`` 真正发生前同步调用一次。默认 ``None`` 时
-    行为与 baseline 完全一致。回调异常原样向上传播，不翻译为
-    ``transport_error``。不扩展成 middleware、事件钩子链或重试框架。
+    v0.3 反馈循环：候选级校验失败时，把机械校验错误作为 tool 结果反馈给
+    模型，最多修正 ``_FEEDBACK_MAX_ROUNDS`` 轮（总 Transport 调用
+    ≤ 1 + _FEEDBACK_MAX_ROUNDS）。确定性可修的错误（缺 title、证据行
+    越界）在每轮校验后立即本地自愈，不消耗反馈轮。循环穷尽仍有非法
+    候选时按原契约返回 validation（由 commit_window_result 隔离进
+    review_items）。响应级失败（非 2xx / 非 JSON / 无 tool_call）仍
+    立即抛 ExtractionCoreError，不走反馈。``before_transport`` 保持
+    W01-P01 语义：仅在第一次 Transport 调用前执行一次。
     """
     if transport is None:
         transport = UrllibTransport()
@@ -261,40 +363,84 @@ def extract_window(
     url = f"{runtime_config.base_url.rstrip('/')}/chat/completions"
     if before_transport is not None:
         before_transport()
-    try:
-        response = transport.post_json(url, request, runtime_config.api_key, timeout_seconds)
-    except ExtractionCoreError:
-        raise
-    except Exception as exc:
-        raise ExtractionCoreError("transport_error") from exc
 
-    if not 200 <= response.status_code < 300:
-        raise ExtractionCoreError("http_non_2xx")
-
-    try:
-        payload = json.loads(response.body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ExtractionCoreError("api_response_not_json")
-
-    # v0.2：候选必须经 submit_candidates 工具调用提交。无 tool_call 一律
-    # 响应级失败（Q01 收敛重试），绝不从正文文本里抢救。
-    try:
-        message = payload["choices"][0]["message"]
-        tool_calls = message["tool_calls"]
-        if not isinstance(tool_calls, list) or not tool_calls:
-            raise LookupError
-        content = tool_calls[0]["function"]["arguments"]
-    except (KeyError, IndexError, TypeError, LookupError):
-        raise ExtractionCoreError("api_response_shape_invalid")
-    if not isinstance(content, str):
-        raise ExtractionCoreError("api_response_shape_invalid")
-
-    # Evidence 允许集合严格来自 Window 消息的原始 JSONL 行号。
     allowed = {message.source_line for message in window.messages}
-    validation = validate_response(content, allowed_evidence_lines=allowed)
-    usage = _extract_usage(payload.get("usage"))
+    rounds_log: list[dict[str, Any]] = []
+    usage_total: dict[str, int] | None = None
+    last_content = ""
+    last_validation: dict[str, Any] = {
+        "response_errors": [],
+        "response_warnings": [],
+        "valid_candidates": [],
+        "invalid_candidates": [],
+    }
+
+    attempt_limit = 1 + _FEEDBACK_MAX_ROUNDS
+    for attempt in range(attempt_limit):
+        try:
+            response = transport.post_json(
+                url, request, runtime_config.api_key, timeout_seconds
+            )
+        except ExtractionCoreError:
+            raise
+        except Exception as exc:
+            raise ExtractionCoreError("transport_error") from exc
+
+        if not 200 <= response.status_code < 300:
+            raise ExtractionCoreError("http_non_2xx")
+
+        try:
+            payload = json.loads(response.body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ExtractionCoreError("api_response_not_json")
+
+        # v0.2 契约保持：候选必须经 submit_candidates 工具调用提交。
+        try:
+            message = payload["choices"][0]["message"]
+            tool_calls = message["tool_calls"]
+            if not isinstance(tool_calls, list) or not tool_calls:
+                raise LookupError
+            content = tool_calls[0]["function"]["arguments"]
+        except (KeyError, IndexError, TypeError, LookupError):
+            raise ExtractionCoreError("api_response_shape_invalid")
+        if not isinstance(content, str):
+            raise ExtractionCoreError("api_response_shape_invalid")
+
+        last_content = content
+        validation = validate_response(content, allowed_evidence_lines=allowed)
+        validation, _healed = _heal_validation(validation, allowed)
+        usage_total = _merge_usage(usage_total, _extract_usage(payload.get("usage")))
+        rounds_log.append(
+            {
+                "attempt": attempt + 1,
+                "valid": len(validation["valid_candidates"]),
+                "invalid": len(validation["invalid_candidates"]),
+            }
+        )
+        last_validation = validation
+        if not validation["invalid_candidates"]:
+            break
+        if attempt + 1 >= attempt_limit:
+            break
+
+        # 反馈轮：回放 assistant tool_call + 注入机械校验错误。
+        feedback = _render_feedback(validation["invalid_candidates"], allowed)
+        request["messages"] = list(request["messages"]) + [
+            {
+                "role": "assistant",
+                "content": message.get("content"),
+                "tool_calls": tool_calls,
+            },
+            {
+                "role": "tool",
+                "tool_call_id": (tool_calls[0] or {}).get("id", "") if isinstance(tool_calls[0], dict) else "",
+                "content": feedback,
+            },
+        ]
+
     return {
-        "model_content": content,
-        "validation": validation,
-        "usage": usage,
+        "model_content": last_content,
+        "validation": last_validation,
+        "usage": usage_total,
+        "feedback_rounds": rounds_log,
     }
