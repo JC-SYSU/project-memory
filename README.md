@@ -65,6 +65,15 @@ Transcripts (the authoritative source) sit in Codex's session directory; the sys
 codex mcp list   # memory_palace_recall should be connected
 ```
 
+### Health checks
+
+The connected memory server exposes two diagnostic tools:
+
+- `memory_health` — read-only report of every project's memory queue (no network, no writes).
+- `memory_upstream_check` — free configuration preview; run the real probes only after an explicit `confirm=true`.
+
+Ask your agent for a health check, or run `python3 scripts/test_connection.py` for the upstream CLI probe.
+
 An end-to-end 3-minute check (includes one model call) is in INSTALL.md, "Acceptance checklist".
 
 ## License

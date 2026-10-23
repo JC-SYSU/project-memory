@@ -234,6 +234,33 @@ python3 cc-integration/cc_backfill_driver.py             # 2) 确认后正式入
 
 两个客户端的历史可以都跑一遍（形态 B）。抽取本身由 drainer 串行执行，会真实调用模型（消耗配额）——规模大的批次建议在空闲时段跑。
 
+## 6.6 健康检查（MCP 工具）
+
+recall MCP server 还提供两个诊断工具。它们对数据库都是只读的。
+
+**`memory_health`** 扫描 `$HOME` 5 层内所有 `.memory-palace/memory-palace.sqlite3`，返回固定格式的 Markdown 报告：
+
+- 抽取队列状态与合计；
+- 审查队列状态与合计；
+- 需要处理的库；
+- 失败明细；
+- 有异常时的简短备注。
+
+它不联网、不写库。直接问「记忆健康检查」「队列状态」「有没有失败」，agent 会调用工具并原样转述报告。
+
+**`memory_upstream_check`** 检查配置的模型端点，必须分两步：
+
+1. 不带参数调用：返回端点、模型、reasoning_effort 和 API Key 是否已配置的预览。**不发送任何请求。**
+2. 带 `confirm: true` 调用：运行与 `scripts/test_connection.py` 相同的四项探针，返回通过/失败报告。这会调用上游模型 4 次，可能产生费用；只在用户明确要求时使用。
+
+安装验证仍可使用 CLI：
+
+```bash
+python3 scripts/test_connection.py
+```
+
+MCP 工具和 CLI 共用同一套探针实现（`src/memory_palace/upstream_probe.py`）。
+
 ## 验收清单（全部通过才算安装完成）
 
 形态判定见 0.5：**形态 A 只做 Codex 项（1–5）；形态 B/C 完成 Codex 项（如有）之外，还必须完成 3.5 节列出的 CC 项**（CC 新会话反问历史、`~/.claude/memory-palace-sessions/` 出现指针文件、`PYTHONPATH=../src python3 -m pytest cc-integration/tests/` 全绿）。

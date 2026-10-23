@@ -65,6 +65,15 @@ Codex 和 Claude Code 读写的是同一个项目库：一条队列、一个数�
 codex mcp list   # memory_palace_recall 应显示 connected
 ```
 
+### 健康检查
+
+已连接的记忆 server 提供两个诊断工具：
+
+- `memory_health` — 只读汇总所有项目的记忆队列（不联网、不写库）。
+- `memory_upstream_check` — 免费返回配置预览；确认后才用 `confirm=true` 跑真实探针。
+
+直接问 agent「记忆健康检查」即可；上游也可以运行 `python3 scripts/test_connection.py`。
+
 3 分钟端到端验证（含模型调用）见 INSTALL.zh-CN.md「验收清单」。
 
 ## License
