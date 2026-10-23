@@ -235,6 +235,33 @@ python3 cc-integration/cc_backfill_driver.py             # 2) run after confirma
 
 Profile B can run both. Extraction itself is executed serially by the drainer and really calls the model (quota consumption) — run large batches off-peak.
 
+## 6.6 Health checks (MCP tools)
+
+The recall MCP server also exposes two diagnostic tools. Both are read-only with respect to the databases.
+
+**`memory_health`** scans every `.memory-palace/memory-palace.sqlite3` under your home directory (5 levels deep) and returns a fixed Markdown report:
+
+- extraction queue states and totals;
+- review queue states and totals;
+- libraries needing attention;
+- failed-job details;
+- a short remark section when something needs action.
+
+It makes no network calls and never writes to a database. Ask your agent for a health check; it will call the tool and relay the report.
+
+**`memory_upstream_check`** checks the configured model endpoint with a mandatory two-step flow:
+
+1. Call with no arguments: returns a preview of the endpoint, model, reasoning effort, and whether an API key is configured. **No request is sent.**
+2. Call with `confirm: true`: sends the same four probes as `scripts/test_connection.py` and returns a pass/fail report. This makes four small model calls and may consume quota; only use it when the user explicitly asks.
+
+The CLI remains available for installation checks:
+
+```bash
+python3 scripts/test_connection.py
+```
+
+The MCP tool and the CLI share the same probe implementation (`src/memory_palace/upstream_probe.py`).
+
 ## Acceptance checklist (all items must pass)
 
 Profile gating per 0.5: **profile A — Codex items only (1–5); profiles B/C — the Codex items (if any) *plus* all CC items from 3.5** (ask a historical question in a new CC session, a pointer file appears under `~/.claude/memory-palace-sessions/`, `PYTHONPATH=../src python3 -m pytest cc-integration/tests/` green).
