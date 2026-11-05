@@ -25,8 +25,29 @@ class McpToolContractTests(unittest.TestCase):
     def test_tool_names(self) -> None:
         names = {tool.name for tool in self._tools()}
         self.assertEqual(
-            names, {"memory_recall", "memory_health", "memory_upstream_check"}
+            names,
+            {
+                "memory_recall",
+                "memory_health",
+                "memory_upstream_check",
+                "memory_list_sessions",
+                "memory_read_session",
+            },
         )
+
+    def test_session_tools_are_read_only(self) -> None:
+        for name in ("memory_list_sessions", "memory_read_session"):
+            tool = next(tool for tool in self._tools() if tool.name == name)
+            assert tool.annotations is not None
+            self.assertTrue(tool.annotations.readOnlyHint)
+            self.assertFalse(tool.annotations.openWorldHint)
+
+    def test_read_session_is_paged(self) -> None:
+        tool = next(tool for tool in self._tools() if tool.name == "memory_read_session")
+        properties = tool.inputSchema["properties"]
+        for field in ("session_id", "offset", "max_messages", "max_chars"):
+            self.assertIn(field, properties)
+        self.assertEqual(properties["max_chars"]["maximum"], 60000)
 
     def test_health_is_read_only(self) -> None:
         tool = next(tool for tool in self._tools() if tool.name == "memory_health")

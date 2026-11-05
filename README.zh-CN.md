@@ -74,6 +74,13 @@ codex mcp list   # memory_palace_recall 应显示 connected
 
 直接问 agent「记忆健康检查」即可；上游也可以运行 `python3 scripts/test_connection.py`。
 
+### 读取过往会话
+
+- `memory_list_sessions` — 列出当前项目的全部 Codex 与 Claude Code 会话，按最近活动倒序，直接读取客户端自己的原始会话文件（含 Codex 压缩的 `.jsonl.zst`）。宫殿处理过但原始文件已不在的会话标为不可读，不从快照还原。
+- `memory_read_session` — 分页读取一个会话的干净对话：只保留用户与助手可见文本，去除工具调用、思考、注入上下文、附件清单、图片与 base64。用 `next_offset` 继续读下一页。
+
+整篇导出到文件：`python3 src/memory_palace_sessions.py read <session_id> --out session.md`（`list` 查看 id）。
+
 3 分钟端到端验证（含模型调用）见 INSTALL.zh-CN.md「验收清单」。
 
 ## License

@@ -262,6 +262,15 @@ python3 scripts/test_connection.py
 
 The MCP tool and the CLI share the same probe implementation (`src/memory_palace/upstream_probe.py`).
 
+### Session tools
+
+**`memory_list_sessions`** and **`memory_read_session`** are read-only and make no model calls. They read `~/.codex/sessions`, `~/.codex/archived_sessions` (`.jsonl` and `.jsonl.zst`) and `~/.claude/projects/<encoded cwd>`, matching the recorded cwd exactly. `memory_read_session` pages by message count and characters (`max_chars` ≤ 60000) so results stay under Claude Code's MCP output limit. The same reader is available as a CLI:
+
+```bash
+python3 src/memory_palace_sessions.py list
+python3 src/memory_palace_sessions.py read <session_id> --out session.md
+```
+
 ## Acceptance checklist (all items must pass)
 
 Profile gating per 0.5: **profile A — Codex items only (1–5); profiles B/C — the Codex items (if any) *plus* all CC items from 3.5** (ask a historical question in a new CC session, a pointer file appears under `~/.claude/memory-palace-sessions/`, `PYTHONPATH=../src python3 -m pytest cc-integration/tests/` green).

@@ -74,6 +74,13 @@ The connected memory server exposes two diagnostic tools:
 
 Ask your agent for a health check, or run `python3 scripts/test_connection.py` for the upstream CLI probe.
 
+### Reading past sessions
+
+- `memory_list_sessions` — every Codex and Claude Code session of the current project, newest first, read straight from the clients' own transcript files (including Codex-compressed `.jsonl.zst`). Sessions the palace processed but whose transcript is gone are listed as unavailable; nothing is rebuilt from snapshots.
+- `memory_read_session` — one page of a session's clean conversation: only visible user and assistant text, with tool calls, reasoning, injected context, attachment lists, images and base64 removed. Continue with `next_offset`.
+
+To export a whole session to a file: `python3 src/memory_palace_sessions.py read <session_id> --out session.md` (`list` shows the ids).
+
 An end-to-end 3-minute check (includes one model call) is in INSTALL.md, "Acceptance checklist".
 
 ## License

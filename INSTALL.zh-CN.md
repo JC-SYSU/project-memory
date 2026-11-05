@@ -261,6 +261,15 @@ python3 scripts/test_connection.py
 
 MCP 工具和 CLI 共用同一套探针实现（`src/memory_palace/upstream_probe.py`）。
 
+### 会话工具
+
+**`memory_list_sessions`** 与 **`memory_read_session`** 只读、不调用模型。读取范围是 `~/.codex/sessions`、`~/.codex/archived_sessions`（`.jsonl` 与 `.jsonl.zst`）和 `~/.claude/projects/<编码后的 cwd>`，按文件内记录的 cwd 精确匹配。`memory_read_session` 按消息条数和字符数分页（`max_chars` ≤ 60000），结果不会超出 Claude Code 的 MCP 输出上限。同一读取器也有 CLI：
+
+```bash
+python3 src/memory_palace_sessions.py list
+python3 src/memory_palace_sessions.py read <session_id> --out session.md
+```
+
 ## 验收清单（全部通过才算安装完成）
 
 形态判定见 0.5：**形态 A 只做 Codex 项（1–5）；形态 B/C 完成 Codex 项（如有）之外，还必须完成 3.5 节列出的 CC 项**（CC 新会话反问历史、`~/.claude/memory-palace-sessions/` 出现指针文件、`PYTHONPATH=../src python3 -m pytest cc-integration/tests/` 全绿）。
