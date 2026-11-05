@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from os import PathLike
 from urllib.parse import quote
 
+from .rollout_io import RolloutDecoderUnavailable, open_rollout_text
 from .worker_orchestrator import initialize_worker_database
 
 __all__ = [
@@ -81,9 +82,12 @@ def project_paths_for_cwd(cwd: object) -> ProjectPaths:
 
 
 def read_session_metadata(session_jsonl_path: str | PathLike[str]) -> SessionMetadata:
-    """Read session_id and cwd from a structured session_meta JSONL record."""
+    """Read session_id and cwd from a structured session_meta JSONL record.
+
+    Accepts plain ``.jsonl`` and Codex-compressed ``.jsonl.zst`` rollouts.
+    """
     try:
-        with open(os.fspath(session_jsonl_path), "r", encoding="utf-8") as source:
+        with open_rollout_text(session_jsonl_path) as source:
             for line in source:
                 if not line.strip():
                     continue
@@ -103,7 +107,8 @@ def read_session_metadata(session_jsonl_path: str | PathLike[str]) -> SessionMet
                     session_id=session_id,
                     cwd=_require_absolute_cwd(payload.get("cwd")),
                 )
-    except (OSError, UnicodeDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, RolloutDecoderUnavailable) as exc:
+        # OSError covers RolloutDecodeError (corrupt/truncated .jsonl.zst).
         raise ProjectPathError("session_unavailable") from exc
     raise ProjectPathError("session_meta_not_found")
 

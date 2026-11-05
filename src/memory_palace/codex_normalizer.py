@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from os import PathLike
-from pathlib import Path
 from typing import Any
 
 from .contracts import NormalizedMessage
+from .rollout_io import open_rollout_text
 
 
 class NormalizationError(ValueError):
@@ -31,7 +31,7 @@ def normalize_capture(
     if start_line < 1:
         raise ValueError("start_line must be at least 1")
 
-    with Path(path).open("r", encoding="utf-8", newline="") as capture:
+    with open_rollout_text(path) as capture:
         text = capture.read()
     lines = text.split("\n")
     if lines and lines[-1] == "":

@@ -23,19 +23,37 @@ from memory_palace.project_paths import (
     read_session_metadata,
     validate_existing_database,
 )
+from memory_palace.rollout_io import is_rollout_file_name
 from memory_palace.worker_orchestrator import recover_interrupted_jobs, run_once
 
 _POLL_SECONDS = 15
 _LOCK_PATH = os.path.expanduser("~/.codex/project-memory/.memory-palace/worker-drainer.lock")
 
 
+def _session_roots(sessions_root: str) -> list[str]:
+    """The given root plus Codex's sibling archived_sessions directory.
+
+    Codex moves archived threads out of ``sessions/`` into
+    ``archived_sessions/``; a project whose only Codex threads were archived
+    must still be discoverable.  Non-Codex roots without that sibling are
+    returned unchanged.
+    """
+    roots = [sessions_root]
+    archived = os.path.join(os.path.dirname(os.path.normpath(sessions_root)), "archived_sessions")
+    if os.path.basename(os.path.normpath(sessions_root)) == "sessions" and os.path.isdir(archived):
+        roots.append(archived)
+    return roots
+
+
 def _iter_session_jsonl_paths(sessions_root: str) -> list[str]:
+    """Plain and Codex-compressed (.jsonl.zst) rollouts under all session roots."""
     paths: list[str] = []
-    for directory, directories, filenames in os.walk(sessions_root):
-        directories.sort()
-        for filename in sorted(filenames):
-            if filename.endswith(".jsonl"):
-                paths.append(os.path.join(directory, filename))
+    for root in _session_roots(sessions_root):
+        for directory, directories, filenames in os.walk(root):
+            directories.sort()
+            for filename in sorted(filenames):
+                if is_rollout_file_name(filename):
+                    paths.append(os.path.join(directory, filename))
     return paths
 
 

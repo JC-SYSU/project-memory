@@ -300,7 +300,7 @@ ls /tmp/pm-test-project/.memory-palace/
 | `codex mcp list` 里 memory_palace_recall 报错 | `command` 解释器与 Codex 运行环境不一致（venv 未激活等），手动编辑 config.toml 修正；`startup_timeout_sec` 默认 10s 不够则调大 |
 | MCP 工具能列出但调用超时 | `tool_timeout_sec` 默认 30s，大库召回按需调大 |
 | 入队成功、抽取一直失败 | 最常见原因：环境变量只设在终端、未进入 Codex/launchd 进程环境。对照第 4 节注入方式逐路检查 |
-| `pip install` 失败 | pip 源不可达；确认 `mcp`/`pydantic` 可从目标源安装 |
+| `pip install` 失败 | pip 源不可达；确认 `mcp`/`pydantic`（Python < 3.14 时还有 `zstandard`）可从目标源安装 |
 | 安装脚本解析失败 | 已自动回滚备份；手工对比 `.bak-*` 恢复 |
 | 请求 404 | `BASE_URL` 填了完整端点路径（多拼了一次 `/chat/completions`），回到第 4 节核对 |
 | 响应空正文/JSON 损坏 | effort 档位过高烧穿配额：降档到 `high`/`medium` 重试 |

@@ -301,7 +301,7 @@ The runner is fail-open: **success produces no output; exit 0 is success**. `tra
 | `codex mcp list` shows memory_palace_recall error | `command` interpreter differs from Codex's runtime (unactivated venv, etc.); hand-edit config.toml; raise `startup_timeout_sec` from 10s if needed |
 | MCP tools listed but calls time out | `tool_timeout_sec` default 30s; raise for huge recalls |
 | enqueue works, extraction always fails | the classic: env vars set only in the terminal, not in the Codex/launchd process env. Check every injection rail in section 4 |
-| `pip install` fails | pip source unreachable; `mcp`/`pydantic` must be installable from your source |
+| `pip install` fails | pip source unreachable; `mcp`/`pydantic` (and `zstandard` on Python < 3.14) must be installable from your source |
 | installer parse failure | it auto-restored the backup; compare with the `.bak-*` to confirm |
 | HTTP 404 on requests | `BASE_URL` filled with a full endpoint path (appended twice); see section 4 fill-in rules |
 | empty body / corrupted JSON | effort level too high burning quota: drop to `high`/`medium` and retry |

@@ -40,23 +40,32 @@ from memory_palace.project_paths import (  # noqa: E402
     ProjectPathError,
     read_session_metadata,
 )
+from memory_palace.rollout_io import ROLLOUT_SUFFIXES, open_rollout_text  # noqa: E402
 
 MANIFEST = REPO / "backfill-codex-manifest.csv"
 
 
 def _line_count(path: Path) -> int:
     count = 0
-    with path.open("r", encoding="utf-8", errors="replace") as handle:
+    with open_rollout_text(path, errors="replace") as handle:
         for _ in handle:
             count += 1
     return count
+
+
+def _rollout_paths(sessions_root: Path) -> list[str]:
+    # Codex compresses cold rollouts to .jsonl.zst on its own; both are sessions.
+    found: set[str] = set()
+    for suffix in ROLLOUT_SUFFIXES:
+        found.update(glob.glob(str(sessions_root / "**" / f"*{suffix}"), recursive=True))
+    return sorted(found)
 
 
 def survey(sessions_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Return (enqueueable, skipped): per-session records with metadata."""
     enqueueable: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
-    for path in sorted(glob.glob(str(sessions_root / "**" / "*.jsonl"), recursive=True)):
+    for path in _rollout_paths(sessions_root):
         path = Path(path)
         size = path.stat().st_size
         record = {"path": path, "size": size}

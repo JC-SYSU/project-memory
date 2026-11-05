@@ -1,2 +1,3 @@
 mcp
 pydantic
+zstandard; python_version < "3.14"

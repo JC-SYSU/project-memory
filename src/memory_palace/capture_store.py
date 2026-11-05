@@ -11,9 +11,12 @@
 - 调用方后续修改或删除源文件，不影响已冻结 Capture；
 - 目标在完整复制成功前不会作为正式 Capture 暴露。
 
+源为 Codex 冷会话压缩件 ``.jsonl.zst`` 时，冻结的是解压后的原始
+JSONL 字节（见 ``rollout_io``）；``byte_count`` 也按解压后字节计。
+
 本模块不做：JSONL 解析或重写、内容 Hash、manifest、Job/Hook/receipt、
-Project/Session 绑定、命名策略与清理策略。只用 Python 标准库；
-不读环境变量、不联网、不访问 SQLite。
+Project/Session 绑定、命名策略与清理策略。除 zstd 解码外只用 Python
+标准库；不读环境变量、不联网、不访问 SQLite。
 """
 
 from __future__ import annotations
@@ -22,6 +25,8 @@ import os
 import tempfile
 from dataclasses import dataclass
 from os import PathLike
+
+from .rollout_io import open_rollout_binary
 
 __all__ = ["FrozenCapture", "freeze_capture"]
 
@@ -84,7 +89,9 @@ def freeze_capture(
         tmp_fd, tmp_path = tempfile.mkstemp(prefix=_TEMP_PREFIX, dir=destination_parent)
         with os.fdopen(tmp_fd, "wb") as tmp_file:
             tmp_fd = None
-            with open(source, "rb") as src_file:
+            # Codex 冷会话会被压成 .jsonl.zst；冻结时解压一次，Capture 始终是
+            # 原始 JSONL 字节，下游 Normalizer 与行号契约不变。
+            with open_rollout_binary(source) as src_file:
                 while True:
                     chunk = src_file.read(_CHUNK_SIZE)
                     if not chunk:
