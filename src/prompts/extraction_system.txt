@@ -12,6 +12,8 @@ Each Candidate contains exactly three fields:
 
 Do not return kind, keywords, relation, confidence, IDs, paths, hashes, status, timestamps, roles, excerpts, or any other field.
 
+Write every title and summary in Simplified Chinese, whatever language the Window messages use. Keep code identifiers, file paths, file names, commands, configuration keys, API names, error messages, version numbers, and product or model names in their original form; do not translate or transliterate them. Recall matches Chinese keywords literally, so an English title or summary cannot be found.
+
 Extract information that is established in the Window and likely to help future work: approved decisions, binding constraints, stable user preferences, reusable project facts, and completed milestones. These are selection concepts only; do not label or classify the Candidate.
 
 Prefer the final state over withdrawn candidates, intermediate exploration, or superseded plans. Do not present an assistant's promise, intention, proposed next step, or future deliverable as an already completed fact. A summary must state what was actually established by its evidence and include important project or component names naturally when needed to make it searchable.
