@@ -10,9 +10,13 @@
   - content 为 list：仅提取 text 块并换行拼接（真实存在 human 文本+图片混排 ×14），
     图片块按 §3.4 多媒体排除
 - type=="assistant" ∧ 非 isSidechain：每个 text 块产出一行；thinking/tool_use 排除
+- type=="attachment" ∧ attachment.type=="queued_command" ∧ commandMode=="prompt"
+  ∧ 非 isSidechain：agent 忙时用户插入的消息，按用户消息收录（2026-11-05 补入：
+  53 条中 51 条只存在于此，无对应 user 记录）。少数情况下 CC 稍后又写出同文的
+  human user 记录，该记录视为重复、跳过，只保留排队时的位置
 
 排除的噪声族（实测计数）：tool_result 伪装的 user 行、isMeta 注入 ×323、
-task-notification ×318、attachment 全族、system 全族（含 compact_boundary ×154）、
+task-notification ×318、其余 attachment、system 全族（含 compact_boundary ×154）、
 sdk ×20、sidechain 子代理内部。未见于语料的规则一律不写（蓝图最小排除纪律）。
 
 末行 JSON 解析失败视为未写完的尾巴：丢弃并停止（下次事件自然补齐）。
@@ -100,6 +104,30 @@ def _user_payload(record: dict[str, Any]) -> str | None:
     return None
 
 
+def _queued_prompt_payload(record: dict[str, Any]) -> str | None:
+    """User text typed while the agent was busy.
+
+    Claude Code stores such a message as an ``attachment`` of type
+    ``queued_command`` with ``commandMode == "prompt"`` and usually writes no
+    human ``user`` record for it (2026-11-05 audit: 51 of 53).  Other command
+    modes such as ``task-notification`` are machine-generated and excluded.
+    """
+    if record.get("isSidechain"):
+        return None
+    attachment = record.get("attachment")
+    if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":
+        return None
+    if attachment.get("commandMode") != "prompt":
+        return None
+    prompt = attachment.get("prompt")
+    if not isinstance(prompt, str):
+        return None
+    stripped = prompt.strip()
+    if not stripped or stripped.startswith(_EXCLUDED_USER_PREFIXES):
+        return None
+    return prompt
+
+
 def _assistant_payloads(record: dict[str, Any]) -> list[str]:
     """One entry per visible assistant text block in this line."""
     if record.get("isSidechain"):
@@ -136,6 +164,9 @@ def compile_visible_messages(transcript_path: str | PathLike[str]) -> list[tuple
     )
 
     messages: list[tuple[str, str, str]] = []
+    # Queued prompts not yet matched by a later human user record carrying the
+    # same text (Claude Code occasionally writes both; 2 of 53 on 2026-11-05).
+    pending_queued: list[str] = []
     for source_line, raw in enumerate(lines, start=1):
         if not raw.strip():
             continue
@@ -154,7 +185,16 @@ def compile_visible_messages(transcript_path: str | PathLike[str]) -> list[tuple
         if record_type == "user":
             visible = _user_payload(record)
             if visible is not None:
+                if visible.strip() in pending_queued:
+                    # Already emitted at queue time; keep that position only.
+                    pending_queued.remove(visible.strip())
+                    continue
                 messages.append((timestamp, "user", visible))
+        elif record_type == "attachment":
+            visible = _queued_prompt_payload(record)
+            if visible is not None:
+                messages.append((timestamp, "user", visible))
+                pending_queued.append(visible.strip())
         elif record_type == "assistant":
             for block_text in _assistant_payloads(record):
                 messages.append((timestamp, "assistant", block_text))

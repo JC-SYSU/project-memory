@@ -154,6 +154,60 @@ class CompilerTests(unittest.TestCase):
         self.assertEqual(after[-1][2], "丙")
 
 
+def queued_line(text, mode="prompt", ts="2026-09-06T09:00:03.000Z", sidechain=False):
+    return json.dumps(
+        {
+            "type": "attachment",
+            "timestamp": ts,
+            "isSidechain": sidechain,
+            "attachment": {"type": "queued_command", "commandMode": mode, "prompt": text},
+        },
+        ensure_ascii=False,
+    )
+
+
+class QueuedPromptTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _compile(self, lines):
+        return [(role, text) for _, role, text in
+                compile_visible_messages(write_transcript(self.tmp.name, lines))]
+
+    def test_queued_prompt_is_a_user_message_in_place(self):
+        got = self._compile([
+            user_line("开始"),
+            assistant_line([{"type": "text", "text": "在做"}]),
+            queued_line("等等，别删那一条"),
+            assistant_line([{"type": "text", "text": "好的"}], ts="2026-09-06T09:00:04.000Z"),
+        ])
+        self.assertEqual(got, [("user", "开始"), ("assistant", "在做"),
+                               ("user", "等等，别删那一条"), ("assistant", "好的")])
+
+    def test_machine_queue_modes_and_sidechain_excluded(self):
+        got = self._compile([
+            user_line("开始"),
+            queued_line("<task-notification>x</task-notification>", mode="task-notification"),
+            queued_line("子代理里排队的", sidechain=True),
+            queued_line("<command-name>/clear</command-name>"),
+        ])
+        self.assertEqual(got, [("user", "开始")])
+
+    def test_later_duplicate_human_record_is_skipped(self):
+        got = self._compile([
+            user_line("开始"),
+            queued_line("同一句话"),
+            assistant_line([{"type": "text", "text": "收到"}]),
+            user_line("同一句话"),
+            user_line("同一句话"),  # a genuine repeat afterwards is kept
+        ])
+        self.assertEqual(got, [("user", "开始"), ("user", "同一句话"), ("assistant", "收到"),
+                               ("user", "同一句话")])
+
+
 class IdentityTests(unittest.TestCase):
     def test_identity_tracks_session_event_and_visible_count(self):
         a = runner._stable_identity("s1", "precompact:auto", 10)
