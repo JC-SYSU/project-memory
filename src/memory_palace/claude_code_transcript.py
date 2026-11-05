@@ -1,7 +1,11 @@
-"""Claude Code transcript compiler (verbatim copy of cc-integration/cc_transcript_compiler.py).
+"""Claude Code transcript compiler for the session browser.
 
-Kept in the palace package so the session browser can read Claude Code
-transcripts without importing the hook directory.  Keep both copies identical.
+Derived from cc-integration/cc_transcript_compiler.py (the capture hook's
+compiler) with one deliberate addition: queued prompts — user messages typed
+while the agent was busy, stored only as ``attachment.queued_command`` — are
+kept (``_queued_prompt_payload``).  The capture hook does not include them yet;
+that would change extraction input and is a separate decision.  Keep every
+other rule identical between the two files.
 
 Compile one Claude Code session JSONL into the frozen Codex-shaped Capture contract.
 
@@ -105,6 +109,31 @@ def _user_payload(record: dict[str, Any]) -> str | None:
     return None
 
 
+def _queued_prompt_payload(record: dict[str, Any]) -> str | None:
+    """User text typed while the agent was busy (session browser only).
+
+    Claude Code stores such a message only as an ``attachment`` of type
+    ``queued_command`` with ``commandMode == "prompt"``; no human ``user``
+    record is written for it (2026-11-05 audit: 51 of 53 queued prompts had
+    no matching user record).  ``task-notification`` and other command modes
+    are machine-generated and stay excluded.
+    """
+    if record.get("isSidechain"):
+        return None
+    attachment = record.get("attachment")
+    if not isinstance(attachment, dict) or attachment.get("type") != "queued_command":
+        return None
+    if attachment.get("commandMode") != "prompt":
+        return None
+    prompt = attachment.get("prompt")
+    if not isinstance(prompt, str):
+        return None
+    stripped = prompt.strip()
+    if not stripped or stripped.startswith(_EXCLUDED_USER_PREFIXES):
+        return None
+    return prompt
+
+
 def _assistant_payloads(record: dict[str, Any]) -> list[str]:
     """One entry per visible assistant text block in this line."""
     if record.get("isSidechain"):
@@ -158,6 +187,10 @@ def compile_visible_messages(transcript_path: str | PathLike[str]) -> list[tuple
         record_type = record.get("type")
         if record_type == "user":
             visible = _user_payload(record)
+            if visible is not None:
+                messages.append((timestamp, "user", visible))
+        elif record_type == "attachment":
+            visible = _queued_prompt_payload(record)
             if visible is not None:
                 messages.append((timestamp, "user", visible))
         elif record_type == "assistant":

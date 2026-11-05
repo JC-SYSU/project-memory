@@ -120,6 +120,23 @@ class SessionBrowserTests(unittest.TestCase):
         self.assertEqual([(m["role"], m["text"]) for m in page["messages"]],
                          [("user", "Codex 里的问题"), ("assistant", "Codex 的回答")])
 
+    def test_cc_queued_prompt_is_a_user_message(self) -> None:
+        p = str(self.project)
+
+        def queued(mode: str, text: str) -> dict:
+            return {"type": "attachment", "timestamp": TS, "cwd": p, "isSidechain": False,
+                    "attachment": {"type": "queued_command", "commandMode": mode, "prompt": text}}
+
+        _dump(self._cc_dir(self.project) / "cccccccc-cccc-cccc-cccc-cccccccccccc.jsonl",
+              [cc_user("开始", p), cc_assistant("在做", p),
+               queued("prompt", "等等，别删那一条"),
+               queued("task-notification", "<task-notification>x</task-notification>"),
+               cc_assistant("好的，恢复", p)])
+        page = sb.read_session(p, "cccccccc")
+        self.assertEqual([(m["role"], m["text"]) for m in page["messages"]], [
+            ("user", "开始"), ("assistant", "在做"), ("user", "等等，别删那一条"), ("assistant", "好的，恢复"),
+        ])
+
     def test_cc_directory_collision_is_resolved_by_recorded_cwd(self) -> None:
         other = self.home / "work" / "my-proj"  # encodes to the same directory name
         _dump(self._cc_dir(self.project) / "33333333-3333-3333-3333-333333333333.jsonl",
