@@ -40,8 +40,8 @@ def normalize_capture(
         (line_number for line_number in range(len(lines), 0, -1) if lines[line_number - 1].strip()),
         0,
     )
-    normalized: list[NormalizedMessage] = []
 
+    parsed: list[tuple[int, Any]] = []
     for source_line, raw_line in enumerate(lines, start=1):
         if not raw_line.strip():
             continue
@@ -53,18 +53,79 @@ def normalize_capture(
             error = NormalizationError(kind, source_line)
             error.__cause__ = exc
             raise error from exc
+        parsed.append((source_line, record))
 
+    # Codex 0.148 起不再写 event_msg/user_message，用户正文改由
+    # item_completed/UserMessage 承载。两种载体在同一文件里从未同时出现
+    # （2026-11-05 全机 425 个 Codex Capture 实测）；仍按整文件只选一种，
+    # 保证同一句话不会因格式过渡被重复收录。
+    use_item_user = not any(
+        isinstance(record, dict) and _is_legacy_user_message(record)
+        for _, record in parsed
+    )
+
+    normalized: list[NormalizedMessage] = []
+    for source_line, record in parsed:
         if source_line < start_line or not isinstance(record, dict):
             continue
 
-        message = _normalize_record(record, source_line)
+        message = _normalize_record(record, source_line, use_item_user=use_item_user)
         if message is not None:
             normalized.append(message)
 
     return tuple(normalized)
 
 
-def _normalize_record(record: dict[str, Any], source_line: int) -> NormalizedMessage | None:
+def _is_legacy_user_message(record: dict[str, Any]) -> bool:
+    payload = record.get("payload")
+    return (
+        record.get("type") == "event_msg"
+        and isinstance(payload, dict)
+        and payload.get("type") == "user_message"
+    )
+
+
+def _user_body(message: str) -> str | None:
+    """Shared exclusions for user text, whichever carrier it came from."""
+
+    if not message:
+        return None
+    if message.lstrip().startswith("<codex_internal_context"):
+        return None
+    if message.startswith(
+        "The following is the Codex agent history whose request action you are assessing."
+    ):
+        return None
+    return message
+
+
+def _item_user_text(item: dict[str, Any]) -> str:
+    """Join visible text blocks of a UserMessage item.
+
+    Images and skill blocks are multimedia/injection carriers (§3.4) and are
+    skipped.  ``<in-app-browser-context`` is auto-generated UI state that the
+    legacy carrier never contained, so it is dropped to keep both carriers
+    equivalent.
+    """
+
+    content = item.get("content")
+    if not isinstance(content, list):
+        return ""
+    texts = [
+        block["text"]
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "text"
+        and isinstance(block.get("text"), str)
+        and block["text"].strip()
+        and not block["text"].lstrip().startswith("<in-app-browser-context")
+    ]
+    return "\n".join(texts)
+
+
+def _normalize_record(
+    record: dict[str, Any], source_line: int, *, use_item_user: bool = False
+) -> NormalizedMessage | None:
     """Apply the frozen carrier whitelist to one already-parsed record."""
 
     timestamp = record.get("timestamp")
@@ -74,15 +135,25 @@ def _normalize_record(record: dict[str, Any], source_line: int) -> NormalizedMes
 
     if record.get("type") == "event_msg" and payload.get("type") == "user_message":
         message = payload.get("message")
-        if not isinstance(message, str) or not message:
+        if not isinstance(message, str):
             return None
-        if message.lstrip().startswith("<codex_internal_context"):
+        body = _user_body(message)
+        if body is None:
             return None
-        if message.startswith(
-            "The following is the Codex agent history whose request action you are assessing."
-        ):
+        return NormalizedMessage(source_line, timestamp, "user", body)
+
+    if (
+        use_item_user
+        and record.get("type") == "event_msg"
+        and payload.get("type") == "item_completed"
+    ):
+        item = payload.get("item")
+        if not isinstance(item, dict) or item.get("type") != "UserMessage":
             return None
-        return NormalizedMessage(source_line, timestamp, "user", message)
+        body = _user_body(_item_user_text(item))
+        if body is None:
+            return None
+        return NormalizedMessage(source_line, timestamp, "user", body)
 
     if (
         record.get("type") == "response_item"
