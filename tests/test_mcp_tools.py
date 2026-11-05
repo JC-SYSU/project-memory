@@ -42,12 +42,13 @@ class McpToolContractTests(unittest.TestCase):
             self.assertTrue(tool.annotations.readOnlyHint)
             self.assertFalse(tool.annotations.openWorldHint)
 
-    def test_read_session_is_paged(self) -> None:
+    def test_read_session_returns_a_file_not_the_body(self) -> None:
         tool = next(tool for tool in self._tools() if tool.name == "memory_read_session")
-        properties = tool.inputSchema["properties"]
-        for field in ("session_id", "offset", "max_messages", "max_chars"):
-            self.assertIn(field, properties)
-        self.assertEqual(properties["max_chars"]["maximum"], 60000)
+        self.assertEqual(set(tool.inputSchema["properties"]), {"session_id", "project"})
+        self.assertEqual(tool.inputSchema.get("required"), ["session_id"])
+        output = set(tool.outputSchema["properties"])
+        self.assertTrue({"path", "estimated_tokens", "exceeds_threshold", "chunks"} <= output)
+        self.assertNotIn("messages", output)
 
     def test_health_is_read_only(self) -> None:
         tool = next(tool for tool in self._tools() if tool.name == "memory_health")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
 import tempfile
@@ -174,6 +175,86 @@ class SessionBrowserTests(unittest.TestCase):
             sb.read_session(str(self.project), "../../etc/passwd")
         with self.assertRaisesRegex(sb.SessionBrowserError, "unknown_session"):
             sb.read_session(str(self.project), "1234")  # short prefixes never auto-resolve
+
+
+class SessionExportTests(SessionBrowserTests):
+    """Export to a temp file: small sessions whole, large ones flagged with chunk ranges."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        from memory_palace import session_export as se
+        self.se = se
+        self.export_dir = self.home / "exports"
+        self.dir_patch = mock.patch.object(se, "export_directory", lambda: str(self.export_dir))
+        self.dir_patch.start()
+
+    def tearDown(self) -> None:
+        self.dir_patch.stop()
+        super().tearDown()
+
+    def _codex_session(self, sid: str, messages: list[dict]) -> None:
+        _dump(self.home / f".codex/sessions/2026/11/03/rollout-2026-11-03T00-00-00-{sid}.jsonl",
+              [codex_meta(sid, str(self.project))] + messages)
+
+    def test_small_session_exports_whole_private_file(self) -> None:
+        sid = "88888888-8888-8888-8888-888888888888"
+        self._codex_session(sid, [codex_user("问题"), codex_assistant(f"图 data:image/png;base64,{B64}")])
+        export = self.se.export_session(str(self.project), sid)
+        text = Path(export.path).read_text(encoding="utf-8")
+        self.assertFalse(export.exceeds_threshold)
+        self.assertEqual(export.chunks, [])
+        self.assertIn("## [0] 用户", text)
+        self.assertIn("[image/png base64 已省略]", text)
+        self.assertNotIn("iVBORw0KGgo", text)
+        self.assertEqual(os.stat(export.path).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(self.export_dir).st_mode & 0o777, 0o700)
+
+    def test_large_session_is_flagged_with_contiguous_chunks(self) -> None:
+        sid = "99999999-9999-9999-9999-999999999999"
+        body = "长" * 30_000  # about 21.6k estimated tokens each
+        self._codex_session(sid, [codex_user(body) for _ in range(8)])
+        export = self.se.export_session(str(self.project), sid)
+        self.assertTrue(export.exceeds_threshold)
+        lines = Path(export.path).read_text(encoding="utf-8").split("\n")
+        chunks = export.chunks
+        self.assertGreater(len(chunks), 1)
+        self.assertEqual(chunks[0]["first_message"], 0)
+        self.assertEqual(chunks[-1]["last_message"], 7)
+        for left, right in zip(chunks, chunks[1:]):
+            self.assertEqual(left["last_line"] + 1, right["first_line"])
+            self.assertEqual(left["last_message"] + 1, right["first_message"])
+        for chunk in chunks:
+            self.assertTrue(lines[chunk["first_line"] - 1].startswith(f"## [{chunk['first_message']}]"))
+            self.assertLessEqual(chunk["estimated_tokens"], self.se.CHUNK_TARGET_TOKENS)
+
+    def test_old_exports_are_swept(self) -> None:
+        self.export_dir.mkdir(mode=0o700)
+        stale = self.export_dir / "session-old.md"
+        stale.write_text("x")
+        os.utime(stale, (0, 0))
+        keep = self.export_dir / "unrelated.txt"
+        keep.write_text("x")
+        os.utime(keep, (0, 0))
+        sid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        self._codex_session(sid, [codex_user("q")])
+        self.se.export_session(str(self.project), sid)
+        self.assertFalse(stale.exists())
+        self.assertTrue(keep.exists())
+
+    def test_cross_project_lookup(self) -> None:
+        other = self.home / "elsewhere"
+        other.mkdir()
+        sid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        _dump(self.home / f".codex/sessions/2026/11/04/rollout-2026-11-04T00-00-00-{sid}.jsonl.zst",
+              [codex_meta(sid, str(other)), codex_user("别处")], zst=True)
+        with self.assertRaisesRegex(sb.SessionBrowserError, "unknown_session"):
+            self.se.export_session(str(self.project), sid)
+        self.assertEqual(sb.locate_session_project(sid), str(other))
+        self.assertEqual(Path(self.se.export_session(str(other), sid).path).exists(), True)
+
+    def test_token_estimate_mixes_cjk_and_ascii(self) -> None:
+        self.assertEqual(self.se.estimate_tokens("中" * 100), 72)
+        self.assertEqual(self.se.estimate_tokens("a" * 100), 40)
 
 
 if __name__ == "__main__":

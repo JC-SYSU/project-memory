@@ -264,7 +264,7 @@ The MCP tool and the CLI share the same probe implementation (`src/memory_palace
 
 ### Session tools
 
-**`memory_list_sessions`** and **`memory_read_session`** are read-only and make no model calls. They read `~/.codex/sessions`, `~/.codex/archived_sessions` (`.jsonl` and `.jsonl.zst`) and `~/.claude/projects/<encoded cwd>`, matching the recorded cwd exactly. `memory_read_session` pages by message count and characters (`max_chars` ≤ 60000) so results stay under Claude Code's MCP output limit. The same reader is available as a CLI:
+**`memory_list_sessions`** and **`memory_read_session`** are read-only and make no model calls. They read `~/.codex/sessions`, `~/.codex/archived_sessions` (`.jsonl` and `.jsonl.zst`) and `~/.claude/projects/<encoded cwd>`, matching the recorded cwd exactly. `memory_read_session` writes the clean conversation to a mode-600 file in `/tmp/memory-palace-sessions/` and returns only metadata, the path, an estimated token count, and — above 100k tokens — chunk line ranges of about 60k tokens each. Claude Code persists MCP results over 25k tokens to disk and Codex truncates tool output at about 10k tokens, so the body never goes through the tool result. Pass `project` to read a session that belongs to another project. The same reader is available as a CLI:
 
 ```bash
 python3 src/memory_palace_sessions.py list

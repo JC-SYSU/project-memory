@@ -263,7 +263,7 @@ MCP 工具和 CLI 共用同一套探针实现（`src/memory_palace/upstream_prob
 
 ### 会话工具
 
-**`memory_list_sessions`** 与 **`memory_read_session`** 只读、不调用模型。读取范围是 `~/.codex/sessions`、`~/.codex/archived_sessions`（`.jsonl` 与 `.jsonl.zst`）和 `~/.claude/projects/<编码后的 cwd>`，按文件内记录的 cwd 精确匹配。`memory_read_session` 按消息条数和字符数分页（`max_chars` ≤ 60000），结果不会超出 Claude Code 的 MCP 输出上限。同一读取器也有 CLI：
+**`memory_list_sessions`** 与 **`memory_read_session`** 只读、不调用模型。读取范围是 `~/.codex/sessions`、`~/.codex/archived_sessions`（`.jsonl` 与 `.jsonl.zst`）和 `~/.claude/projects/<编码后的 cwd>`，按文件内记录的 cwd 精确匹配。`memory_read_session` 把干净对话写入 `/tmp/memory-palace-sessions/` 下权限 600 的文件，只返回元数据、路径、估算 token 数；超过 10 万 token 时另给每块约 6 万 token 的分块行号区间。Claude Code 会把超过 2.5 万 token 的 MCP 结果转存到磁盘，Codex 会把工具输出截断在约 1 万 token，所以正文从不经过工具返回值。读取其他项目的会话时传 `project` 参数。同一读取器也有 CLI：
 
 ```bash
 python3 src/memory_palace_sessions.py list

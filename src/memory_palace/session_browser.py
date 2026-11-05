@@ -36,6 +36,7 @@ __all__ = [
     "SessionInfo",
     "Message",
     "list_sessions",
+    "locate_session_project",
     "read_session",
 ]
 
@@ -248,6 +249,33 @@ def list_sessions(project: str, *, include_empty: bool = False) -> list[SessionI
         result.append(info)
     result.sort(key=lambda s: (s.updated_at or "", s.session_id), reverse=True)
     return result
+
+
+def locate_session_project(session_id: str) -> str | None:
+    """The cwd that owns ``session_id`` across all of this user's transcripts.
+
+    Exact ids only; prefixes are resolved within one project by ``_resolve``.
+    Used to offer cross-project continuation without guessing.
+    """
+    wanted = session_id.strip()
+    if wanted.startswith(CC_PREFIX):
+        wanted = wanted[len(CC_PREFIX):]
+    if not _UUID.fullmatch(wanted):
+        return None
+    for path in glob.glob(os.path.join(_home(), ".claude", "projects", "*", f"{wanted}.jsonl")):
+        cwd = _cc_file_cwd(path)
+        if cwd:
+            return cwd
+    for path in _codex_files():
+        if wanted not in os.path.basename(path):
+            continue
+        try:
+            meta = read_session_metadata(path)
+        except ProjectPathError:
+            continue
+        if meta.session_id == wanted:
+            return meta.cwd
+    return None
 
 
 def _resolve(sessions: dict[str, SessionInfo], session_id: str) -> SessionInfo:

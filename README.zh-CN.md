@@ -77,7 +77,7 @@ codex mcp list   # memory_palace_recall 应显示 connected
 ### 读取过往会话
 
 - `memory_list_sessions` — 列出当前项目的全部 Codex 与 Claude Code 会话，按最近活动倒序，直接读取客户端自己的原始会话文件（含 Codex 压缩的 `.jsonl.zst`）。宫殿处理过但原始文件已不在的会话标为不可读，不从快照还原。
-- `memory_read_session` — 分页读取一个会话的干净对话：只保留用户与助手可见文本，去除工具调用、思考、注入上下文、附件清单、图片与 base64。用 `next_offset` 继续读下一页。
+- `memory_read_session` — 把一个会话的干净对话（只保留用户与助手可见文本，去除工具调用、思考、注入上下文、附件清单、图片与 base64）导出到 `/tmp/memory-palace-sessions/` 下的私有临时文件，只返回元数据和文件路径，结果不会超出任何客户端的工具输出上限，正文由 agent 自行读取。估算超过 10 万 token 的会话会标出分块行号区间，供 agent 询问用户是完整读入还是派子代理精炼。超过 3 天的导出文件自动删除。
 
 整篇导出到文件：`python3 src/memory_palace_sessions.py read <session_id> --out session.md`（`list` 查看 id）。
 
