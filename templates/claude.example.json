@@ -1,5 +1,5 @@
 {
-  "注释": "Claude Code 接入示例：hooks 段写入 ~/.claude/settings.json（或项目 .claude/settings.local.json）的 \"hooks\" 键下；mcpServers 段写入 ~/.claude.json 的 \"mcpServers\" 键下。占位符：{{PYTHON}}=解释器绝对路径，{{INSTALL_DIR}}=仓库绝对路径（cc_capture_hook_runner.py 会自动从自身位置推导宫殿 src，无需额外配置；指针目录可用环境变量 CC_MEMORY_MIRROR_ROOT 覆盖，默认 ~/.claude/memory-palace-sessions）。",
+  "注释": "Claude Code 接入示例：hooks 段写入 ~/.claude/settings.json（或项目 .claude/settings.local.json）的 \"hooks\" 键下；mcpServers 段写入 ~/.claude.json 的 \"mcpServers\" 键下。占位符：{{PYTHON}}=解释器绝对路径，{{INSTALL_DIR}}=仓库绝对路径（cc_capture_hook_runner.py 会自动从自身位置推导宫殿 src，无需额外配置；指针目录可用环境变量 CC_MEMORY_MIRROR_ROOT 覆盖，默认 ~/.claude/memory-palace-sessions）。SessionStart 段是召回提醒：只在当前项目有 .memory-palace 库时、每个新会话注入一句提醒（resume 会话不注入），提醒文字为中文。",
   "hooks": {
     "PreCompact": [
       {
@@ -21,6 +21,17 @@
             "type": "command",
             "command": "{{PYTHON}} -B {{INSTALL_DIR}}/cc-integration/cc_capture_hook_runner.py",
             "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{INSTALL_DIR}}/cc-integration/cc_session_start_reminder.zsh",
+            "timeout": 5
           }
         ]
       }

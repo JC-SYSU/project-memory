@@ -115,6 +115,8 @@ Hook 注册形态（P2 才安装，装到 `~/.claude/settings.json`）：
 |------|--------|--------|--------|
 | `cc_transcript_compiler.py` | CC→Codex 格式编译器（库，无 CLI） | 被 runner/driver import | 不直接运行 |
 | `cc_capture_hook_runner.py` | 正式接单入口（hook 指向它） | PreCompact/SessionEnd 自动触发 | 不手动跑；测试见 tests/ |
+| `cc_session_start_reminder.zsh` | 召回提醒（SessionStart hook） | 新会话开始时，当前项目有 `.memory-palace/` 库就注入一行 `memory_recall` 提醒；resume 不输出 | 按 `templates/claude.example.json` 注册；手测见 INSTALL C2 |
+| `route_session_read.sh` | 可选的会话读取路由（PreToolUse hook） | agent 直接读原始 jsonl 时拒绝并指向 `memory_read_session` | 按 `templates/claude.settings.hooks.example.json` 注册；开发目录用 `MEMORY_PALACE_DEV_DIRS` 豁免 |
 | `cc_backfill_driver.py` | 历史会话批量搬运器 | 有新积累的历史会话要补入库 | `python3 -B cc_backfill_driver.py --dry-run` 先看清单，去掉 `--dry-run` 执行；重跑安全（duplicate 自动识别） |
 | `repair_one.py` | **候选级修复器**（Reviewer 原型）：给复审件补证据行号→校验→写回/判废 | 复审队列积压时清账 | `python3 -B repair_one.py <库路径> <review_item_id>`（加 `--dry-run` 只出修复稿）；**绝不可整窗重跑**（宫殿无去重，必重复） |
 | `probe_gateway_schema.py` | **网关 schema 强制力陷阱探针**（读进程环境变量，env 文件已退役） | 换抽取模型/换网关之前的标准体检 | `python3 -B probe_gateway_schema.py [模型名]…`；陷阱=schema 强制提示词没提过的字段；判读：两模式全 ✓ 才可信，✗"纯文本回答"=该模型完全无视约束（GLM+本网关现状），✗"非法 JSON"=软执行 |

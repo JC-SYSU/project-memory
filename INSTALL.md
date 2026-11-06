@@ -24,7 +24,7 @@ command -v claude  # is the Claude Code CLI on PATH?
 | Profile | Detected on this machine | Install what | Follow sections |
 | ---- | ---- | ---- | ---- |
 | **A** | Codex, no Claude Code | Palace core only: deps + Codex hooks/MCP registration + env vars | 1, 2, 3, 4; 5 optional; skip 3.5; accept only Codex items |
-| **B** | both Codex and Claude Code | Core + full CC compatibility layer (`cc-integration/` scripts, `~/.claude/settings.json` hooks, `~/.claude.json` mcpServers registration) | 1–4 + 3.5 + 5 optional; accept Codex and CC items |
+| **B** | both Codex and Claude Code | Core + full CC compatibility layer (`cc-integration/` scripts, `~/.claude/settings.json` hooks — PreCompact, SessionEnd, SessionStart — and `~/.claude.json` mcpServers registration) | 1–4 + 3.5 + 5 optional; accept Codex and CC items |
 | **C** | Claude Code only | Core + full CC compatibility layer, repository deployed under the **CC home** `~/.claude/memory-palace/`, all paths pointing there | 1, 2, 4 + 3.5 (placeholders = that directory); no Codex registration at all; 5 optional |
 | not installable | neither client | The system is triggered by Codex or Claude Code hooks — install at least one client first | — |
 
@@ -110,12 +110,13 @@ tool_timeout_sec = 30.0
 
 ### 3.5 Claude Code integration (mandatory for profiles B/C; skip for A)
 
-Claude Code talks to the same palace — same queue, same drainer — in both directions, with zero changes to the palace source. Two pieces:
+Claude Code talks to the same palace — same queue, same drainer — in both directions, with zero changes to the palace source. Three pieces:
 
 1. **Write path**: `PreCompact` / `SessionEnd` hook events compile CC sessions into Codex-shaped captures and enqueue them (`cc-integration/cc_capture_hook_runner.py`, fail-open, silent exit 0);
 2. **Read path**: the MCP server is exposed to CC through a wrapper (`cc-integration/cc_memory_palace_recall_wrapper.zsh` → `src/memory_palace_recall_mcp_server.py`). The wrapper is required: the server binds the project database to its cwd at startup, and CC only promises `CLAUDE_PROJECT_DIR` — not the spawn cwd — so the wrapper explicitly cd's.
+3. **Recall reminder**: a `SessionStart` hook (`cc-integration/cc_session_start_reminder.zsh`) prints one reminder line to call `memory_recall` when the current project has a `.memory-palace/` database. It fires once per new session, stays silent for resumed sessions and for projects without a database, and makes no network call. The reminder text is Chinese.
 
-Configuration: `templates/claude.example.json` (annotated): merge the hooks stanza into the `"hooks"` key of `~/.claude/settings.json`, and the mcpServers stanza into the `"mcpServers"` key of `~/.claude.json`. Placeholders are the same as section 3 (`{{PYTHON}}` / `{{INSTALL_DIR}}`). Pointer files default to `~/.claude/memory-palace-sessions`; override with `CC_MEMORY_MIRROR_ROOT`.
+Configuration: `templates/claude.example.json` (annotated): merge its `PreCompact`, `SessionEnd` and `SessionStart` hook stanzas into the `"hooks"` key of `~/.claude/settings.json` (append next to any existing entries for the same event, don't replace them), and the mcpServers stanza into the `"mcpServers"` key of `~/.claude.json`. Placeholders are the same as section 3 (`{{PYTHON}}` / `{{INSTALL_DIR}}`). Pointer files default to `~/.claude/memory-palace-sessions`; override with `CC_MEMORY_MIRROR_ROOT`.
 
 Acceptance: in a new CC session, asking a historical question about the current project should make the model call `memory_recall`; a pointer file `~/.claude/memory-palace-sessions/<session-id>.jsonl` (single session_meta line) appearing per session confirms the write path. Historical batch backfill: `cc-integration/cc_backfill_driver.py` (scans `~/.claude/projects/*/*.jsonl`, safe to re-run). CC-side tests: `PYTHONPATH=../src python3 -m pytest cc-integration/tests/`.
 
@@ -278,7 +279,7 @@ python3 src/memory_palace_sessions.py read <session_id> --out session.md
 
 ## Acceptance checklist (all items must pass)
 
-Profile gating per 0.5: **profile A — Codex items only (1–5); profiles B/C — the Codex items (if any) *plus* all CC items from 3.5** (ask a historical question in a new CC session, a pointer file appears under `~/.claude/memory-palace-sessions/`, `PYTHONPATH=../src python3 -m pytest cc-integration/tests/` green).
+Profile gating per 0.5: **profile A — Codex items 1–5; profile B — Codex items 1–5 and Claude Code items C1–C5; profile C — Claude Code items C1–C5 plus item 2 (env vars)**.
 
 | # | Verify | Command | Pass criteria |
 | ---- | ---- | ---- | ---- |
@@ -300,13 +301,26 @@ ls /tmp/pm-test-project/.memory-palace/
 
 The runner is fail-open: **success produces no output; exit 0 is success**. `transcript_path` of `null` takes the ignored branch (same silent exit 0, no database) — a way to check the runner is alive. Item 4's accepted branch triggers one real extraction attempt (model call). Clean up afterwards: `rm -rf /tmp/pm-test-project /tmp/pm-test-session.jsonl`.
 
+Claude Code items (profiles B/C):
+
+| # | Verify | Command | Pass criteria |
+| ---- | ---- | ---- | ---- |
+| C1 | MCP registered | `claude mcp get memory-palace-recall` | `Status: ✔ Connected` |
+| C2 | recall reminder | `echo '{"source":"startup","cwd":"<a project with .memory-palace/>"}' \| <INSTALL_DIR>/cc-integration/cc_session_start_reminder.zsh` | prints one line starting with `本项目配有记忆宫殿库`; the same command with `"source":"resume"` prints nothing |
+| C3 | recall from a session | new CC session in a project with history, ask about a past decision | the model calls `memory_recall` |
+| C4 | write path | end that CC session (or `/compact`) | `~/.claude/memory-palace-sessions/<session-id>.jsonl` appears (one `session_meta` line) and the project's `extraction_jobs` gains a row |
+| C5 | CC-side tests | `PYTHONPATH=../src python3 -m pytest cc-integration/tests/` | all green |
+
+Sessions whose cwd is in a temp directory (prefixes `/tmp`, `/var`, and macOS `/private`), sessions started by the Agent SDK, and sessions with no visible dialogue are rejected by the write-path admission gate by design — run C4 from a normal project directory.
+
 ## 7. Uninstall
 
 1. Delete the `PreCompact` (matcher `^(manual|auto)$`) and `UserPromptSubmit` entries pointing at this repository from `~/.codex/hooks.json`;
 2. Delete the `[mcp_servers.memory_palace_recall]` stanza from `~/.codex/config.toml`;
 3. If launchd-resident: `launchctl unload -w <plist>` and delete the plist;
-   If you installed the optional pieces: remove the `route_session_read.sh` PreToolUse entry from `~/.claude/settings.json` and the `continue-session` folder from your skills directory;
-4. Delete the repository — project `.memory-palace/` directories and transcripts live outside it.
+4. Claude Code (profiles B/C): from `~/.claude/settings.json` delete the `PreCompact` and `SessionEnd` entries running `cc_capture_hook_runner.py` and the `SessionStart` entry running `cc_session_start_reminder.zsh`; from `~/.claude.json` delete `mcpServers.memory-palace-recall` (or run `claude mcp remove memory-palace-recall -s user`); optionally delete the pointer directory `~/.claude/memory-palace-sessions/`;
+5. Optional pieces: remove the `route_session_read.sh` PreToolUse entry from `~/.claude/settings.json` and the `continue-session` folder from your skills directory;
+6. Delete the repository — project `.memory-palace/` directories and transcripts live outside it.
 
 ## 8. Troubleshooting
 
@@ -320,3 +334,7 @@ The runner is fail-open: **success produces no output; exit 0 is success**. `tra
 | installer parse failure | it auto-restored the backup; compare with the `.bak-*` to confirm |
 | HTTP 404 on requests | `BASE_URL` filled with a full endpoint path (appended twice); see section 4 fill-in rules |
 | empty body / corrupted JSON | effort level too high burning quota: drop to `high`/`medium` and retry |
+| CC: `memory_recall` never shows up | `claude mcp get memory-palace-recall` not connected: the wrapper is not executable (`chmod +x`), or its python lacks `mcp`; resumed sessions keep the tool list from when they started, so open a new session after fixing |
+| CC: no pointer file / no job after a session | the session was rejected by the admission gate (temp-dir cwd, Agent SDK entrypoint, no visible dialogue), or the hook's `{{PYTHON}}` path is wrong; run the hook command by hand with a test payload to see the exit code |
+| CC: no recall reminder at session start | expected for resumed sessions and for projects without `.memory-palace/`; otherwise check the `SessionStart` entry and that the script is executable |
+| an agent reads raw `.jsonl` transcripts instead of `memory_read_session` | install the optional `route_session_read.sh` hook (Claude Code). Codex has no equivalent guard yet |

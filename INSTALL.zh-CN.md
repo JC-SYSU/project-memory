@@ -25,7 +25,7 @@ command -v claude  # Claude Code CLI 是否在 PATH
 | ---- | ---- | ---- | ---- |
 | **A** | 检测到 Codex，未检测到 Claude Code | 记忆宫殿本体：依赖 + Codex hooks/MCP 注册 + 环境变量 | 第 1、2、3、4 节；第 5 节可选；跳过 3.5；验收只做 Codex 项 |
 | 不可装 | 两者都未检测到 | 本系统由 Codex 或 Claude Code 的 hook 触发，至少先装其中一个客户端 | — |
-| **B** | Codex 和 Claude Code 都有 | 本体 + CC 兼容层**全套**（`cc-integration/` 脚本部署、`~/.claude/settings.json` hooks 注入、`~/.claude.json` mcpServers 注册） | 第 1–4 节 + 3.5 + 第 5 节可选；验收 Codex 项与 CC 项全做 |
+| **B** | Codex 和 Claude Code 都有 | 本体 + CC 兼容层**全套**（`cc-integration/` 脚本部署、`~/.claude/settings.json` hooks 注入（PreCompact、SessionEnd、SessionStart）、`~/.claude.json` mcpServers 注册） | 第 1–4 节 + 3.5 + 第 5 节可选；验收 Codex 项与 CC 项全做 |
 | **C** | 只有 Claude Code | 本体 + CC 兼容层全套，仓库部署到 **CC 家目录** `~/.claude/memory-palace/`，所有路径指向该位置 | 第 1、2、4 节 + 3.5（占位符换成该目录）；不做任何 Codex 注册；第 5 节可选 |
 
 形态 C 的部署位置决定路径（这是与 A/B 唯一的实质差异——脚本内部用相对路径推导宫殿 `src/`，只要保持仓库原布局，放哪个根目录都能工作）：
@@ -79,12 +79,13 @@ python3 scripts/install.py --apply    # 实际写入
 
 ### 3.5 Claude Code 集成（形态 B/C 必装；形态 A 跳过）
 
-Claude Code 通过同一记忆宫殿（同一队列、同一 drainer）获得双向接入，宫殿源码零改动。集成 = 两件事：
+Claude Code 通过同一记忆宫殿（同一队列、同一 drainer）获得双向接入，宫殿源码零改动。集成 = 三件事：
 
 1. **写路径**：`PreCompact` / `SessionEnd` 两个 hook 事件编译 CC 会话为 Codex 格式 Capture 并入队（`cc-integration/cc_capture_hook_runner.py`，fail-open 静默退出 0）；
 2. **读路径**：MCP server 经 wrapper 暴露给 CC（`cc-integration/cc_memory_palace_recall_wrapper.zsh` → `src/memory_palace_recall_mcp_server.py`）。wrapper 必须存在：MCP server 以启动时 cwd 绑定项目库，而 CC 只承诺注入 `CLAUDE_PROJECT_DIR` 不承诺 spawn 的工作目录，wrapper 负责显式 cd。
+3. **召回提醒**：`SessionStart` hook（`cc-integration/cc_session_start_reminder.zsh`）在当前项目存在 `.memory-palace/` 库时，注入一句调用 `memory_recall` 的提醒。每个新会话一次；resume 会话和没有库的项目不输出，也不联网。
 
-接入配置见 `templates/claude.example.json`（含注释）：hooks 段并入 `~/.claude/settings.json` 的 `"hooks"` 键，mcpServers 段并入 `~/.claude.json` 的 `"mcpServers"` 键。两个占位符与第 3 节相同（`{{PYTHON}}`/`{{INSTALL_DIR}}`）。指针文件目录默认 `~/.claude/memory-palace-sessions`，可用环境变量 `CC_MEMORY_MIRROR_ROOT` 覆盖。
+接入配置见 `templates/claude.example.json`（含注释）：其中 `PreCompact`、`SessionEnd`、`SessionStart` 三段 hook 并入 `~/.claude/settings.json` 的 `"hooks"` 键（同一事件已有条目时追加在旁边，不要覆盖），mcpServers 段并入 `~/.claude.json` 的 `"mcpServers"` 键。两个占位符与第 3 节相同（`{{PYTHON}}`/`{{INSTALL_DIR}}`）。指针文件目录默认 `~/.claude/memory-palace-sessions`，可用环境变量 `CC_MEMORY_MIRROR_ROOT` 覆盖。
 
 验收：CC 新会话中问一句当前项目的历史问题，模型应能调用 `memory_recall`；观察 `~/.claude/memory-palace-sessions/<session-id>.jsonl`（单行 session_meta 指针）随会话出现，即写路径生效。历史会话批量回填工具：`cc-integration/cc_backfill_driver.py`（扫描 `~/.claude/projects/*/*.jsonl`，重跑安全）。CC 侧测试：`PYTHONPATH=../src python3 -m pytest cc-integration/tests/`。
 
@@ -277,7 +278,7 @@ python3 src/memory_palace_sessions.py read <session_id> --out session.md
 
 ## 验收清单（全部通过才算安装完成）
 
-形态判定见 0.5：**形态 A 只做 Codex 项（1–5）；形态 B/C 完成 Codex 项（如有）之外，还必须完成 3.5 节列出的 CC 项**（CC 新会话反问历史、`~/.claude/memory-palace-sessions/` 出现指针文件、`PYTHONPATH=../src python3 -m pytest cc-integration/tests/` 全绿）。
+形态判定见 0.5：**形态 A 做 Codex 项 1–5；形态 B 做 Codex 项 1–5 与 Claude Code 项 C1–C5；形态 C 做 Claude Code 项 C1–C5 与第 2 项（环境变量）**。
 
 | # | 验证内容 | 命令 | 通过标准 |
 | ---- | ---- | ---- | ---- |
@@ -299,13 +300,26 @@ ls /tmp/pm-test-project/.memory-palace/
 
 说明：runner 是 fail-open 设计，**成功路径无任何输出，退出码 0 即正常**；`transcript_path` 传 `null` 走 ignored 分支（同样静默退出 0、不建库），可用来确认 runner 进程活着。第 4 项 accepted 会触发一次真实抽取尝试（模型调用）。验证后清理：`rm -rf /tmp/pm-test-project /tmp/pm-test-session.jsonl`。
 
+Claude Code 项（形态 B/C）：
+
+| # | 验证内容 | 命令 | 通过标准 |
+| ---- | ---- | ---- | ---- |
+| C1 | MCP 注册 | `claude mcp get memory-palace-recall` | `Status: ✔ Connected` |
+| C2 | 召回提醒 | `echo '{"source":"startup","cwd":"<有 .memory-palace/ 的项目>"}' \| <INSTALL_DIR>/cc-integration/cc_session_start_reminder.zsh` | 输出一行以「本项目配有记忆宫殿库」开头；把 `source` 换成 `"resume"` 时无输出 |
+| C3 | 会话内召回 | 在有历史的项目新开 CC 会话，问一个过往决定 | 模型调用 `memory_recall` |
+| C4 | 写路径 | 结束这个 CC 会话（或执行 `/compact`） | 出现 `~/.claude/memory-palace-sessions/<session-id>.jsonl`（单行 `session_meta`），该项目的 `extraction_jobs` 多一条记录 |
+| C5 | CC 侧测试 | `PYTHONPATH=../src python3 -m pytest cc-integration/tests/` | 全绿 |
+
+写路径准入门会按设计拒绝三类会话：cwd 在临时目录下的（前缀 `/tmp`、`/var` 以及 macOS 的 `/private`），Agent SDK 启动的，以及没有可见对话的。C4 请在普通项目目录下做。
+
 ## 7. 卸载
 
 1. 从 `~/.codex/hooks.json` 删除 `PreCompact`（matcher `^(manual|auto)$`）与 `UserPromptSubmit` 下 command 指向本仓库的 entry；
 2. 从 `~/.codex/config.toml` 删除 `[mcp_servers.memory_palace_recall]` 段；
 3. 若有 launchd 常驻：`launchctl unload -w <plist>` 并删除 plist；
-   如装了可选组件：从 `~/.claude/settings.json` 删除 `route_session_read.sh` 的 PreToolUse 条目，并从 skill 目录删除 `continue-session` 文件夹；
-4. 删除仓库即可——项目 `.memory-palace/` 与转录都不在仓库内。
+4. Claude Code（形态 B/C）：从 `~/.claude/settings.json` 删除运行 `cc_capture_hook_runner.py` 的 `PreCompact`、`SessionEnd` 条目，以及运行 `cc_session_start_reminder.zsh` 的 `SessionStart` 条目；从 `~/.claude.json` 删除 `mcpServers.memory-palace-recall`（或执行 `claude mcp remove memory-palace-recall -s user`）；指针目录 `~/.claude/memory-palace-sessions/` 可一并删除；
+5. 可选组件：从 `~/.claude/settings.json` 删除 `route_session_read.sh` 的 PreToolUse 条目，并从 skill 目录删除 `continue-session` 文件夹；
+6. 删除仓库即可——项目 `.memory-palace/` 与转录都不在仓库内。
 
 ## 8. 故障排查
 
@@ -319,3 +333,7 @@ ls /tmp/pm-test-project/.memory-palace/
 | 安装脚本解析失败 | 已自动回滚备份；手工对比 `.bak-*` 恢复 |
 | 请求 404 | `BASE_URL` 填了完整端点路径（多拼了一次 `/chat/completions`），回到第 4 节核对 |
 | 响应空正文/JSON 损坏 | effort 档位过高烧穿配额：降档到 `high`/`medium` 重试 |
+| CC：始终看不到 `memory_recall` | `claude mcp get memory-palace-recall` 显示未连接：wrapper 没有执行权限（`chmod +x`），或它用的 python 缺 `mcp`；resume 的会话沿用启动时的工具列表，修好后要新开会话 |
+| CC：会话结束后没有指针文件、没有任务 | 会话被准入门拒绝（cwd 在临时目录、Agent SDK 启动、没有可见对话），或 hook 里的 `{{PYTHON}}` 路径不对；用测试 payload 手动运行 hook 命令看退出码 |
+| CC：新会话开头没有召回提醒 | resume 会话和没有 `.memory-palace/` 的项目本来就不提醒；其他情况检查 `SessionStart` 条目和脚本执行权限 |
+| agent 不用 `memory_read_session`，自己去读原始 `.jsonl` | 安装可选的 `route_session_read.sh` hook（Claude Code）。Codex 侧暂无同类拦截 |
