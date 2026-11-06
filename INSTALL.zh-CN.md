@@ -59,7 +59,7 @@ PYTHONPATH=$REPO/src python3 -c "import memory_palace.worker_orchestrator, memor
 期望输出：无错误、无输出。
 失败处理：缺依赖则回到第 1 步；报语法错误则仓库损坏，换源重新克隆。
 
-## 3. 注册 Codex 集成（hooks + MCP）
+## 3. 运行安装器（Codex 与 Claude Code）
 
 一键安装器 `scripts/install.py`，默认只预览，`--apply` 才写入：
 
@@ -68,14 +68,23 @@ python3 scripts/install.py            # dry-run：打印将执行的全部动作
 python3 scripts/install.py --apply    # 实际写入
 ```
 
-安装器行为（与手动安装等效，见下文两张表）：
+用将来运行 hook 和 MCP server 的那个解释器来跑它，它的路径会写进每条命令。
 
-- 向 `~/.codex/hooks.json` **合并**两个事件：`PreCompact`（会话压缩前入队）与 `UserPromptSubmit`（每次提问注入召回路由提示词）。已有同名命令不重复添加，其余 hooks 原样保留。
-- 向 `~/.codex/config.toml` **追加** `[mcp_servers.memory_palace_recall]` 段（已存在则跳过）。
-- 每次写文件前备份为 `*.bak-<UTC时间戳>`；写后重新解析（JSON/TOML），解析失败自动回滚到备份并终止。
+安装器按顺序做这些事（与下文两张手动表和 3.5 节等效）：
 
-期望输出（`--apply`）：逐条打印 `hooks[...]: registered ...` 与 `config.toml: ... appended ...`。
-失败处理：安装器任何一步失败即终止且不写配置；按报错信息处理（多为权限或路径问题）。
+1. 检测 PATH 上的 `codex` 和 `claude`，按 0.5 节确定形态；两个都没有就停止。
+2. 把仓库放到标准位置：本机有 Codex 时是 `~/.codex/memory-palace/`，否则是 `~/.claude/memory-palace/`。仓库在别处时，整个复制过去（含 `.git`、未提交改动和未跟踪文件），逐文件比对 SHA-256，一致后删除原目录，再从新位置重新运行安装器；之后请 `cd` 到新位置。标准位置已有另一个目录，或正在运行的解释器位于仓库内时，安装器什么都不改直接停止。`--keep-location` 表示原地注册。
+3. 安装 `requirements.txt`，检查导入，提示缺失的 `PROJECT_MEMORY_*` 变量，给 hook 和 wrapper 脚本加执行权限。
+4. Codex：向 `~/.codex/hooks.json` 合并 `PreCompact`（会话压缩前入队）与 `UserPromptSubmit`（每次提问注入召回路由提示词），向 `~/.codex/config.toml` 追加 `[mcp_servers.memory_palace_recall]`。
+5. Claude Code：向 `~/.claude/settings.json` 合并 `PreCompact`、`SessionEnd`、`SessionStart` 和可选的 `PreToolUse` 路由 hook，向 `~/.claude.json` 添加 `mcpServers.memory-palace-recall`（Claude Code 运行时会改写这个文件，所以写入前会重新读取一次）。
+6. 把 `continue-session` skill 复制到 `~/.codex/skills/` 和/或 `~/.claude/skills/`；两个路径解析到同一目录时只复制一份。
+
+已有条目运行的是同一个脚本（文件名相同，路径不限）时跳过，已有的召回 MCP server 也跳过；其余 hooks 和设置原样保留。每个目标写入前备份为 `*.bak-<UTC时间戳>`，写后重新解析（JSON/TOML），解析失败自动恢复备份并终止。`--no-skill`、`--no-route-hook` 跳过可选组件；没有 `jq` 时路由 hook 也会跳过，并打印说明。
+
+期望输出（`--apply`）：每个动作一行（`hooks[...]: registered ...`、`config.toml: ... appended ...`、`settings.json hooks[...]: register ...`、`~/.claude.json mcpServers...: added ...`、`skill: copied ...`）。
+失败处理：安装器在第一个失败的步骤停止；按报错信息处理（多为权限或路径问题）。
+
+hooks 写入后 Codex 会要求重新信任（桌面版：设置 → 钩子；TUI：`/hooks`），用 `codex mcp list` 确认。Claude Code 新开一个会话，用 `claude mcp get memory-palace-recall` 确认；server 不在时，是运行中的会话改写了 `~/.claude.json`，重跑一次安装器即可。
 
 ### 3.5 Claude Code 集成（形态 B/C 必装；形态 A 跳过）
 
@@ -86,6 +95,8 @@ Claude Code 通过同一记忆宫殿（同一队列、同一 drainer）获得双
 3. **召回提醒**：`SessionStart` hook（`cc-integration/cc_session_start_reminder.zsh`）在当前项目存在 `.memory-palace/` 库时，注入一句调用 `memory_recall` 的提醒。每个新会话一次；resume 会话和没有库的项目不输出，也不联网。
 
 接入配置见 `templates/claude.example.json`（含注释）：其中 `PreCompact`、`SessionEnd`、`SessionStart` 三段 hook 并入 `~/.claude/settings.json` 的 `"hooks"` 键（同一事件已有条目时追加在旁边，不要覆盖），mcpServers 段并入 `~/.claude.json` 的 `"mcpServers"` 键。两个占位符与第 3 节相同（`{{PYTHON}}`/`{{INSTALL_DIR}}`）。指针文件目录默认 `~/.claude/memory-palace-sessions`，可用环境变量 `CC_MEMORY_MIRROR_ROOT` 覆盖。
+
+安装器检测到 `claude` 时会自动处理 CC 这部分。如需单独手动安装或更新，读 `templates/claude.example.json`（含注释）按里面的结构手动合并 hook 段和 MCP server。
 
 验收：CC 新会话中问一句当前项目的历史问题，模型应能调用 `memory_recall`；观察 `~/.claude/memory-palace-sessions/<session-id>.jsonl`（单行 session_meta 指针）随会话出现，即写路径生效。历史会话批量回填工具：`cc-integration/cc_backfill_driver.py`（扫描 `~/.claude/projects/*/*.jsonl`，重跑安全）。CC 侧测试：`PYTHONPATH=../src python3 -m pytest cc-integration/tests/`。
 
@@ -273,7 +284,7 @@ python3 src/memory_palace_sessions.py read <session_id> --out session.md
 
 #### 可选：`continue-session` skill 与会话读取路由 hook
 
-- **Skill** `skills/continue-session/`：说"读一下会话 `<id>`"或"接着会话 `<id>` 继续"（或输入 `/continue-session <id>`）即可触发。它调用 `memory_read_session`；估算超过 10 万 token 的会话先停下问你：完整读入，还是派子代理分块精炼（合计不超过 5 万 token）；随后用 300 字以内复述，并提醒状态可能已过时、旧会话里的授权不延续。把整个目录复制到 skill 目录即可（Claude Code 为 `~/.claude/skills/`，Codex 为 `~/.codex/skills/`，两者可共用一个目录）。
+- **Skill** `skills/continue-session/`：说"读一下会话 `<id>`"或"接着会话 `<id>` 继续"（或输入 `/continue-session <id>`）即可触发。它调用 `memory_read_session`；估算超过 10 万 token 的会话先停下问你：完整读入，还是派子代理分块精炼（合计不超过 5 万 token）；随后用 300 字以内复述，并提醒状态可能已过时、旧会话里的授权不延续。安装器会自动复制。手动安装：把整个目录复制到 skill 目录即可（Claude Code 为 `~/.claude/skills/`，Codex 为 `~/.codex/skills/`，两者可共用一个目录）。
 - **Hook** `cc-integration/route_session_read.sh`（Claude Code，需要 `jq`）：拦截读取 `~/.claude/projects` 或 `~/.codex/sessions` 下原始会话的 `Bash`/`Read`/`Grep`/`Glob` 调用，提示 agent 改用 `memory_read_session`。不装它，agent 被要求"读这几个会话"时可能自己去解析原始 JSONL。注册方式见 `templates/claude.settings.hooks.example.json`。在维护宫殿本身的目录工作时，用 `MEMORY_PALACE_DEV_DIRS`（冒号分隔的绝对路径）豁免。
 
 ## 验收清单（全部通过才算安装完成）

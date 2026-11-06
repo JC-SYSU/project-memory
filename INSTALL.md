@@ -59,7 +59,7 @@ PYTHONPATH=$REPO/src python3 -c "import memory_palace.worker_orchestrator, memor
 Expected: no output, no error.
 Failure: missing deps → back to section 1; syntax error → broken clone, re-clone from source.
 
-## 3. Register Codex integration (hooks + MCP)
+## 3. Run the installer (Codex and Claude Code)
 
 One-shot installer, preview by default, `--apply` writes:
 
@@ -68,16 +68,23 @@ python3 scripts/install.py            # dry-run: prints every action it would ta
 python3 scripts/install.py --apply    # actually write
 ```
 
-What the installer does (equivalent to the manual tables below):
+Run it with the interpreter that should run the hooks and the MCP server; its path is written into every command.
 
-- Merges two events into `~/.codex/hooks.json`: `PreCompact` (enqueue before compaction) and `UserPromptSubmit` (inject a recall-routing prompt on every question). An existing identical command is skipped; other hooks are preserved.
-- Appends the `[mcp_servers.memory_palace_recall]` stanza to `~/.codex/config.toml` (skips if present).
-- Backs up every target as `*.bak-<UTC timestamp>` before writing; re-parses after writing (JSON/TOML); on parse failure restores the backup and aborts.
+What the installer does, in order (equivalent to the manual tables below and section 3.5):
 
-Expected (`--apply`): lines like `hooks[...]: registered ...` and `config.toml: ... appended ...`.
-Failure: installer aborts without writing on any failure; fix per the error (usually permissions or paths).
+1. Detects `codex` and `claude` on PATH and picks the profile from 0.5; with neither it stops.
+2. Puts the repo at the standard location: `~/.codex/memory-palace/` when Codex is installed, otherwise `~/.claude/memory-palace/`. A repo found elsewhere is copied there whole (`.git`, uncommitted changes and untracked files included), every file is compared by SHA-256, the old directory is deleted, and the installer re-runs from the new location; `cd` there afterwards. It stops without changing anything when the standard location already holds a different directory, or when the running interpreter lives inside the repo. `--keep-location` registers the repo where it is.
+3. Installs `requirements.txt`, checks the imports, warns about missing `PROJECT_MEMORY_*` variables, and sets the execute bit on the hook and wrapper scripts.
+4. Codex: merges `PreCompact` (enqueue before compaction) and `UserPromptSubmit` (recall-routing prompt on every question) into `~/.codex/hooks.json`, and appends `[mcp_servers.memory_palace_recall]` to `~/.codex/config.toml`.
+5. Claude Code: merges `PreCompact`, `SessionEnd`, `SessionStart` and the optional `PreToolUse` routing hook into `~/.claude/settings.json`, and adds `mcpServers.memory-palace-recall` to `~/.claude.json` (re-read right before the write, since Claude Code rewrites that file while it runs).
+6. Copies the `continue-session` skill into `~/.codex/skills/` and/or `~/.claude/skills/`; two skill paths that resolve to one directory get one copy.
 
-After writing hooks, Codex asks to re-trust them (`/hooks`); verify with `codex mcp list`.
+An entry that already runs the same script (same file name, any path) is skipped, as is an existing recall MCP server; other hooks and settings are kept. Every target is backed up as `*.bak-<UTC timestamp>` before writing and re-parsed after (JSON/TOML); on parse failure the backup is restored and the installer aborts. `--no-skill` and `--no-route-hook` skip the optional pieces; the routing hook is also skipped, with a message, when `jq` is missing.
+
+Expected (`--apply`): one line per action (`hooks[...]: registered ...`, `config.toml: ... appended ...`, `settings.json hooks[...]: register ...`, `~/.claude.json mcpServers...: added ...`, `skill: copied ...`).
+Failure: the installer stops at the first failing step; fix per the error (usually permissions or paths).
+
+After writing hooks, Codex asks to re-trust them (desktop app: Settings → Hooks; TUI: `/hooks`); verify with `codex mcp list`. In Claude Code, open a new session and check `claude mcp get memory-palace-recall`; if the server is missing, a running session rewrote `~/.claude.json` — re-run the installer.
 
 ### Manual equivalents (if you don't trust the installer)
 
@@ -117,6 +124,8 @@ Claude Code talks to the same palace — same queue, same drainer — in both di
 3. **Recall reminder**: a `SessionStart` hook (`cc-integration/cc_session_start_reminder.zsh`) prints one reminder line to call `memory_recall` when the current project has a `.memory-palace/` database. It fires once per new session, stays silent for resumed sessions and for projects without a database, and makes no network call. The reminder text is Chinese.
 
 Configuration: `templates/claude.example.json` (annotated): merge its `PreCompact`, `SessionEnd` and `SessionStart` hook stanzas into the `"hooks"` key of `~/.claude/settings.json` (append next to any existing entries for the same event, don't replace them), and the mcpServers stanza into the `"mcpServers"` key of `~/.claude.json`. Placeholders are the same as section 3 (`{{PYTHON}}` / `{{INSTALL_DIR}}`). Pointer files default to `~/.claude/memory-palace-sessions`; override with `CC_MEMORY_MIRROR_ROOT`.
+
+The installer handles CC automatically when `claude` is on PATH. To apply only the CC pieces by hand or to update an existing install, read `templates/claude.example.json` (annotated) and merge the hook stanzas and MCP server manually.
 
 Acceptance: in a new CC session, asking a historical question about the current project should make the model call `memory_recall`; a pointer file `~/.claude/memory-palace-sessions/<session-id>.jsonl` (single session_meta line) appearing per session confirms the write path. Historical batch backfill: `cc-integration/cc_backfill_driver.py` (scans `~/.claude/projects/*/*.jsonl`, safe to re-run). CC-side tests: `PYTHONPATH=../src python3 -m pytest cc-integration/tests/`.
 
@@ -274,7 +283,7 @@ python3 src/memory_palace_sessions.py read <session_id> --out session.md
 
 #### Optional: `continue-session` skill and read-routing hook
 
-- **Skill** `skills/continue-session/` lets you say "read session `<id>`" or "continue session `<id>`" (or type `/continue-session <id>`). It calls `memory_read_session`, stops to ask before reading a session estimated above 100k tokens (read it whole, or have subagents refine each chunk into at most 50k tokens in total), recaps in at most 300 Chinese characters, then reminds you that the state may be stale and that approvals from the old session do not carry over. Copy the directory into your skills folder (`~/.claude/skills/` for Claude Code, `~/.codex/skills/` for Codex; one shared folder works for both).
+- **Skill** `skills/continue-session/` lets you say "read session `<id>`" or "continue session `<id>`" (or type `/continue-session <id>`). It calls `memory_read_session`, stops to ask before reading a session estimated above 100k tokens (read it whole, or have subagents refine each chunk into at most 50k tokens in total), recaps in at most 300 Chinese characters, then reminds you that the state may be stale and that approvals from the old session do not carry over. The installer copies it automatically. To install by hand: copy the directory into your skills folder (`~/.claude/skills/` for Claude Code, `~/.codex/skills/` for Codex; one shared folder works for both).
 - **Hook** `cc-integration/route_session_read.sh` (Claude Code, needs `jq`) denies `Bash`/`Read`/`Grep`/`Glob` calls that read raw transcripts under `~/.claude/projects` or `~/.codex/sessions` and tells the agent to use `memory_read_session`. Without it, an agent asked to "read these sessions" may parse the raw JSONL itself. Register it with `templates/claude.settings.hooks.example.json`. Set `MEMORY_PALACE_DEV_DIRS` (colon-separated absolute paths) to exempt working directories where you maintain the palace itself.
 
 ## Acceptance checklist (all items must pass)
