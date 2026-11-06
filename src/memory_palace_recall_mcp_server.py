@@ -54,8 +54,10 @@ SERVER_INSTRUCTIONS = (
     "它只读扫描本机所有项目的记忆库并返回固定格式报告，原样转述返回的 Markdown，不要自己重算。"
     "当用户询问上游模型、抽取端点或服务商连接是否正常时，先调用 memory_upstream_check 不带参数取得配置预览；"
     "向用户确认后，才用 confirm=true 运行真实探针。真实探针会调用上游模型并产生费用；用户没有明确要求时不要发起。"
-    "当用户要列出本项目会话、或要看某次会话的对话原文时，用 memory_list_sessions 找到 session_id，"
-    "再用 memory_read_session 导出干净对话到临时文件并自行读取；原始文件已不在的会话如实告知无法读取。"
+    "用户给出 session id（完整 id 或至少 8 位前缀）并要求读取、查看、总结、对比或继续某个会话时，"
+    "不论会话属于哪个项目，一律用 memory_read_session 导出干净对话到临时文件再自行读取；"
+    "要找会话 id 时用 memory_list_sessions。不要用 find、cat、python 或自写脚本直接读 "
+    "~/.claude/projects 或 ~/.codex/sessions 下的原始会话文件。原始文件已不在的会话如实告知无法读取。"
     "用户要求在某个会话上继续工作时，使用 continue-session skill。"
 )
 TOOL_DESCRIPTION = (
