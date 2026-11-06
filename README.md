@@ -40,7 +40,7 @@ This suits people who keep returning to the same project over many sessions, and
 You are installing the Project Memory system. The source repository is https://github.com/JC-SYSU/project-memory. Do the following:
 
 1. Clone that repository to a sensible location and cd into it. If you cannot clone, read the installation spec directly instead: https://raw.githubusercontent.com/JC-SYSU/project-memory/main/INSTALL.md
-2. Read INSTALL.md in full (the Chinese version is INSTALL.zh-CN.md if preferred) and execute it step by step: probe the machine and pick the install profile (section 0.5), install dependencies, verify imports, register the Codex integration and — if Claude Code is present — the CC compatibility layer (section 3.5), configure the model-service environment variables via scripts/setup_env.py (only URL and API key are asked) and run its connectivity tests.
+2. Read INSTALL.md in full (the Chinese version is INSTALL.zh-CN.md if preferred) and execute it step by step: probe the machine and pick the install profile (section 0.5), then run `python3 scripts/install.py --apply` (the installer handles Codex and Claude Code automatically, moves the repo to the standard location, copies the continue-session skill, and registers all hooks and the MCP server), configure the model-service environment variables via scripts/setup_env.py (only URL and API key are asked) and run its connectivity tests.
 3. Before any step that writes outside this repository (hooks.json, config.toml, settings.json, .claude.json, shell rc files, launchd) or consumes model quota (connectivity tests, historical-session backfill from section 6.5), show me what you are about to do and wait for my confirmation — including the survey output before backfilling.
 4. When everything is done, run the acceptance checklist (section "Acceptance checklist") and report each item's result to me. Anything that fails: fix it per the troubleshooting table (section 8) before reporting back.
 ```
@@ -62,7 +62,8 @@ Transcripts (the authoritative source) sit in Codex's session directory; the sys
 ## Quick verification
 
 ```bash
-codex mcp list   # memory_palace_recall should be connected
+codex mcp list                        # memory_palace_recall should be connected
+claude mcp get memory-palace-recall   # Claude Code: Status: ✔ Connected
 ```
 
 ### Health checks
@@ -81,7 +82,7 @@ Ask your agent for a health check, or run `python3 scripts/test_connection.py` f
 
 To export a whole session to a file: `python3 src/memory_palace_sessions.py read <session_id> --out session.md` (`list` shows the ids).
 
-To pick up where a past session left off, use the optional `continue-session` skill (`skills/continue-session/`): say "continue session `<id>`". See INSTALL.md, "Session tools".
+To pick up where a past session left off, use the `continue-session` skill (`skills/continue-session/`): say "continue session `<id>`". The installer copies it automatically; see INSTALL.md, "Session tools".
 
 An end-to-end 3-minute check (includes one model call) is in INSTALL.md, "Acceptance checklist".
 

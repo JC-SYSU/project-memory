@@ -40,7 +40,7 @@ Codex 和 Claude Code 读写的是同一个项目库：一条队列、一个数�
 你正在安装 Project Memory 系统。源码仓库在 https://github.com/JC-SYSU/project-memory 。请按以下要求执行：
 
 1. 把该仓库克隆到合适位置并 cd 进入。如果无法克隆，直接阅读安装规范：https://raw.githubusercontent.com/JC-SYSU/project-memory/main/INSTALL.md
-2. 完整阅读 INSTALL.md（想看中文版就读 INSTALL.zh-CN.md），并逐节执行：探测本机并确定安装形态（0.5 节）、安装依赖、验证导入、注册 Codex 集成；若检测到 Claude Code 还要注册 CC 兼容层（3.5 节）；用 scripts/setup_env.py 配置模型服务环境变量（只需填 URL 和 Key）并跑它的连通性测试。
+2. 完整阅读 INSTALL.md（想看中文版就读 INSTALL.zh-CN.md），并逐节执行：探测本机并确定安装形态（0.5 节），然后运行 `python3 scripts/install.py --apply`（安装器自动处理 Codex 和 Claude Code 两端，把仓库移到标准位置，复制 continue-session skill，注册全部 hook 和 MCP server）；再用 scripts/setup_env.py 配置模型服务环境变量（只需填 URL 和 Key）并跑它的连通性测试。
 3. 任何向本仓库以外写入的步骤（hooks.json、config.toml、settings.json、.claude.json、shell rc 文件、launchd）或消耗模型配额的步骤（连通性测试、6.5 节的历史会话回填），先把你将要做的展示给我，等我确认后再执行——回填前要把扫描统计结果也给我看。
 4. 全部完成后运行验收清单（「验收清单」节），并把每一项结果报告给我。有失败的项，先按故障排查表（第 8 节）修复再汇报。
 ```
@@ -62,7 +62,8 @@ Codex 和 Claude Code 读写的是同一个项目库：一条队列、一个数�
 ## 快速验证已装上
 
 ```bash
-codex mcp list   # memory_palace_recall 应显示 connected
+codex mcp list                        # memory_palace_recall 应显示 connected
+claude mcp get memory-palace-recall   # Claude Code：Status: ✔ Connected
 ```
 
 ### 健康检查
@@ -81,7 +82,7 @@ codex mcp list   # memory_palace_recall 应显示 connected
 
 整篇导出到文件：`python3 src/memory_palace_sessions.py read <session_id> --out session.md`（`list` 查看 id）。
 
-要在某个历史会话上接着工作，可装可选的 `continue-session` skill（`skills/continue-session/`），然后说"接着会话 `<id>` 继续"。详见 INSTALL.zh-CN.md「会话工具」。
+要在某个历史会话上接着工作，使用 `continue-session` skill（`skills/continue-session/`），然后说"接着会话 `<id>` 继续"。安装器默认会复制，详见 INSTALL.zh-CN.md「会话工具」。
 
 3 分钟端到端验证（含模型调用）见 INSTALL.zh-CN.md「验收清单」。
 
