@@ -1,0 +1,16 @@
+{
+  "注释": "可选：会话读取路由 hook。把 PreToolUse 段合并进 ~/.claude/settings.json 的 \"hooks\" 键（与已有 PreToolUse 条目并列，不要覆盖）。{{INSTALL_DIR}}=仓库绝对路径。需要 jq。维护宫殿本身时，在环境变量 MEMORY_PALACE_DEV_DIRS 里列出要豁免的工作目录（冒号分隔）。",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Read|Grep|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{INSTALL_DIR}}/cc-integration/route_session_read.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

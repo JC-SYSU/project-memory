@@ -271,6 +271,11 @@ python3 src/memory_palace_sessions.py list
 python3 src/memory_palace_sessions.py read <session_id> --out session.md
 ```
 
+#### Optional: `continue-session` skill and read-routing hook
+
+- **Skill** `skills/continue-session/` lets you say "read session `<id>`" or "continue session `<id>`" (or type `/continue-session <id>`). It calls `memory_read_session`, stops to ask before reading a session estimated above 100k tokens (read it whole, or have subagents refine each chunk into at most 50k tokens in total), recaps in at most 300 Chinese characters, then reminds you that the state may be stale and that approvals from the old session do not carry over. Copy the directory into your skills folder (`~/.claude/skills/` for Claude Code, `~/.codex/skills/` for Codex; one shared folder works for both).
+- **Hook** `cc-integration/route_session_read.sh` (Claude Code, needs `jq`) denies `Bash`/`Read`/`Grep`/`Glob` calls that read raw transcripts under `~/.claude/projects` or `~/.codex/sessions` and tells the agent to use `memory_read_session`. Without it, an agent asked to "read these sessions" may parse the raw JSONL itself. Register it with `templates/claude.settings.hooks.example.json`. Set `MEMORY_PALACE_DEV_DIRS` (colon-separated absolute paths) to exempt working directories where you maintain the palace itself.
+
 ## Acceptance checklist (all items must pass)
 
 Profile gating per 0.5: **profile A — Codex items only (1–5); profiles B/C — the Codex items (if any) *plus* all CC items from 3.5** (ask a historical question in a new CC session, a pointer file appears under `~/.claude/memory-palace-sessions/`, `PYTHONPATH=../src python3 -m pytest cc-integration/tests/` green).
@@ -300,6 +305,7 @@ The runner is fail-open: **success produces no output; exit 0 is success**. `tra
 1. Delete the `PreCompact` (matcher `^(manual|auto)$`) and `UserPromptSubmit` entries pointing at this repository from `~/.codex/hooks.json`;
 2. Delete the `[mcp_servers.memory_palace_recall]` stanza from `~/.codex/config.toml`;
 3. If launchd-resident: `launchctl unload -w <plist>` and delete the plist;
+   If you installed the optional pieces: remove the `route_session_read.sh` PreToolUse entry from `~/.claude/settings.json` and the `continue-session` folder from your skills directory;
 4. Delete the repository — project `.memory-palace/` directories and transcripts live outside it.
 
 ## 8. Troubleshooting

@@ -81,6 +81,8 @@ codex mcp list   # memory_palace_recall 应显示 connected
 
 整篇导出到文件：`python3 src/memory_palace_sessions.py read <session_id> --out session.md`（`list` 查看 id）。
 
+要在某个历史会话上接着工作，可装可选的 `continue-session` skill（`skills/continue-session/`），然后说"接着会话 `<id>` 继续"。详见 INSTALL.zh-CN.md「会话工具」。
+
 3 分钟端到端验证（含模型调用）见 INSTALL.zh-CN.md「验收清单」。
 
 ## License

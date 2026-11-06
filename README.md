@@ -81,6 +81,8 @@ Ask your agent for a health check, or run `python3 scripts/test_connection.py` f
 
 To export a whole session to a file: `python3 src/memory_palace_sessions.py read <session_id> --out session.md` (`list` shows the ids).
 
+To pick up where a past session left off, use the optional `continue-session` skill (`skills/continue-session/`): say "continue session `<id>`". See INSTALL.md, "Session tools".
+
 An end-to-end 3-minute check (includes one model call) is in INSTALL.md, "Acceptance checklist".
 
 ## License

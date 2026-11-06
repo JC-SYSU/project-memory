@@ -270,6 +270,11 @@ python3 src/memory_palace_sessions.py list
 python3 src/memory_palace_sessions.py read <session_id> --out session.md
 ```
 
+#### 可选：`continue-session` skill 与会话读取路由 hook
+
+- **Skill** `skills/continue-session/`：说"读一下会话 `<id>`"或"接着会话 `<id>` 继续"（或输入 `/continue-session <id>`）即可触发。它调用 `memory_read_session`；估算超过 10 万 token 的会话先停下问你：完整读入，还是派子代理分块精炼（合计不超过 5 万 token）；随后用 300 字以内复述，并提醒状态可能已过时、旧会话里的授权不延续。把整个目录复制到 skill 目录即可（Claude Code 为 `~/.claude/skills/`，Codex 为 `~/.codex/skills/`，两者可共用一个目录）。
+- **Hook** `cc-integration/route_session_read.sh`（Claude Code，需要 `jq`）：拦截读取 `~/.claude/projects` 或 `~/.codex/sessions` 下原始会话的 `Bash`/`Read`/`Grep`/`Glob` 调用，提示 agent 改用 `memory_read_session`。不装它，agent 被要求"读这几个会话"时可能自己去解析原始 JSONL。注册方式见 `templates/claude.settings.hooks.example.json`。在维护宫殿本身的目录工作时，用 `MEMORY_PALACE_DEV_DIRS`（冒号分隔的绝对路径）豁免。
+
 ## 验收清单（全部通过才算安装完成）
 
 形态判定见 0.5：**形态 A 只做 Codex 项（1–5）；形态 B/C 完成 Codex 项（如有）之外，还必须完成 3.5 节列出的 CC 项**（CC 新会话反问历史、`~/.claude/memory-palace-sessions/` 出现指针文件、`PYTHONPATH=../src python3 -m pytest cc-integration/tests/` 全绿）。
@@ -299,6 +304,7 @@ ls /tmp/pm-test-project/.memory-palace/
 1. 从 `~/.codex/hooks.json` 删除 `PreCompact`（matcher `^(manual|auto)$`）与 `UserPromptSubmit` 下 command 指向本仓库的 entry；
 2. 从 `~/.codex/config.toml` 删除 `[mcp_servers.memory_palace_recall]` 段；
 3. 若有 launchd 常驻：`launchctl unload -w <plist>` 并删除 plist；
+   如装了可选组件：从 `~/.claude/settings.json` 删除 `route_session_read.sh` 的 PreToolUse 条目，并从 skill 目录删除 `continue-session` 文件夹；
 4. 删除仓库即可——项目 `.memory-palace/` 与转录都不在仓库内。
 
 ## 8. 故障排查
