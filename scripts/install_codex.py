@@ -2,8 +2,10 @@
 """Register Project Memory with Codex: hooks.json + recall MCP server.
 
 Writes two targets:
-  ~/.codex/hooks.json     merges PreCompact and UserPromptSubmit entries
-                          (recall routing prompt is injected by the runner)
+  ~/.codex/hooks.json     merges PreCompact, SessionEnd and UserPromptSubmit
+                          entries (recall routing prompt is injected by the
+                          runner; SessionEnd catches sessions that end without
+                          ever compacting)
   ~/.codex/config.toml    appends [mcp_servers.memory_palace_recall]
 
 Design:

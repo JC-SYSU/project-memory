@@ -75,7 +75,7 @@ python3 scripts/install.py --apply    # 实际写入
 1. 检测 PATH 上的 `codex` 和 `claude`，按 0.5 节确定形态；两个都没有就停止。
 2. 把仓库放到标准位置：本机有 Codex 时是 `~/.codex/memory-palace/`，否则是 `~/.claude/memory-palace/`。仓库在别处时，整个复制过去（含 `.git`、未提交改动和未跟踪文件），逐文件比对 SHA-256，一致后删除原目录，再从新位置重新运行安装器；之后请 `cd` 到新位置。标准位置已有另一个目录，或正在运行的解释器位于仓库内时，安装器什么都不改直接停止。`--keep-location` 表示原地注册。
 3. 安装 `requirements.txt`，检查导入，提示缺失的 `PROJECT_MEMORY_*` 变量，给 hook 和 wrapper 脚本加执行权限。
-4. Codex：向 `~/.codex/hooks.json` 合并 `PreCompact`（会话压缩前入队）与 `UserPromptSubmit`（每次提问注入召回路由提示词），向 `~/.codex/config.toml` 追加 `[mcp_servers.memory_palace_recall]`。
+4. Codex：向 `~/.codex/hooks.json` 合并 `PreCompact`（会话压缩前入队）、`SessionEnd`（会话结束入队，兜住从未压缩就结束的会话）与 `UserPromptSubmit`（每次提问注入召回路由提示词），向 `~/.codex/config.toml` 追加 `[mcp_servers.memory_palace_recall]`。
 5. Claude Code：向 `~/.claude/settings.json` 合并 `PreCompact`、`SessionEnd`、`SessionStart` 和可选的 `PreToolUse` 路由 hook，向 `~/.claude.json` 添加 `mcpServers.memory-palace-recall`（Claude Code 运行时会改写这个文件，所以写入前会重新读取一次）。
 6. 把 `continue-session` skill 复制到 `~/.codex/skills/` 和/或 `~/.claude/skills/`；两个路径解析到同一目录时只复制一份。
 
@@ -325,7 +325,7 @@ Claude Code 项（形态 B/C）：
 
 ## 7. 卸载
 
-1. 从 `~/.codex/hooks.json` 删除 `PreCompact`（matcher `^(manual|auto)$`）与 `UserPromptSubmit` 下 command 指向本仓库的 entry；
+1. 从 `~/.codex/hooks.json` 删除 `PreCompact`（matcher `^(manual|auto)$`）、`SessionEnd` 与 `UserPromptSubmit` 下 command 指向本仓库的 entry；
 2. 从 `~/.codex/config.toml` 删除 `[mcp_servers.memory_palace_recall]` 段；
 3. 若有 launchd 常驻：`launchctl unload -w <plist>` 并删除 plist；
 4. Claude Code（形态 B/C）：从 `~/.claude/settings.json` 删除运行 `cc_capture_hook_runner.py` 的 `PreCompact`、`SessionEnd` 条目，以及运行 `cc_session_start_reminder.zsh` 的 `SessionStart` 条目；从 `~/.claude.json` 删除 `mcpServers.memory-palace-recall`（或执行 `claude mcp remove memory-palace-recall -s user`）；指针目录 `~/.claude/memory-palace-sessions/` 可一并删除；

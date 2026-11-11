@@ -8,7 +8,7 @@ AI assistants start every session from zero. Last month's decisions, the pitfall
 
 Nothing to operate once installed. In the background:
 
-1. **Capture.** When a Codex session is about to be compacted, a hook writes "history to archive" into a queue and returns immediately. Your session is not blocked.
+1. **Capture.** When a Codex session is about to be compacted or ends — and likewise for Claude Code sessions — a hook writes "history to archive" into a queue and returns immediately. Your session is not blocked.
 2. **Extract.** A worker splits the transcript into bounded pages and asks a model to keep what remains useful across sessions — decisions made, bugs fixed, why things are done this way. Every entry anchors to the exact evidence in the original conversation and lands in the project's own `.memory-palace/`.
 3. **Recall.** In a new session, when the question depends on past facts, the model calls `memory_recall` itself and keeps working instead of asking "haven't we done this before?"
 

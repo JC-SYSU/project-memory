@@ -75,7 +75,7 @@ What the installer does, in order (equivalent to the manual tables below and sec
 1. Detects `codex` and `claude` on PATH and picks the profile from 0.5; with neither it stops.
 2. Puts the repo at the standard location: `~/.codex/memory-palace/` when Codex is installed, otherwise `~/.claude/memory-palace/`. A repo found elsewhere is copied there whole (`.git`, uncommitted changes and untracked files included), every file is compared by SHA-256, the old directory is deleted, and the installer re-runs from the new location; `cd` there afterwards. It stops without changing anything when the standard location already holds a different directory, or when the running interpreter lives inside the repo. `--keep-location` registers the repo where it is.
 3. Installs `requirements.txt`, checks the imports, warns about missing `PROJECT_MEMORY_*` variables, and sets the execute bit on the hook and wrapper scripts.
-4. Codex: merges `PreCompact` (enqueue before compaction) and `UserPromptSubmit` (recall-routing prompt on every question) into `~/.codex/hooks.json`, and appends `[mcp_servers.memory_palace_recall]` to `~/.codex/config.toml`.
+4. Codex: merges `PreCompact` (enqueue before compaction), `SessionEnd` (enqueue at session end — catches sessions that end without ever compacting) and `UserPromptSubmit` (recall-routing prompt on every question) into `~/.codex/hooks.json`, and appends `[mcp_servers.memory_palace_recall]` to `~/.codex/config.toml`.
 5. Claude Code: merges `PreCompact`, `SessionEnd`, `SessionStart` and the optional `PreToolUse` routing hook into `~/.claude/settings.json`, and adds `mcpServers.memory-palace-recall` to `~/.claude.json` (re-read right before the write, since Claude Code rewrites that file while it runs).
 6. Copies the `continue-session` skill into `~/.codex/skills/` and/or `~/.claude/skills/`; two skill paths that resolve to one directory get one copy.
 
@@ -324,7 +324,7 @@ Sessions whose cwd is in a temp directory (prefixes `/tmp`, `/var`, and macOS `/
 
 ## 7. Uninstall
 
-1. Delete the `PreCompact` (matcher `^(manual|auto)$`) and `UserPromptSubmit` entries pointing at this repository from `~/.codex/hooks.json`;
+1. Delete the `PreCompact` (matcher `^(manual|auto)$)`, `SessionEnd` and `UserPromptSubmit` entries pointing at this repository from `~/.codex/hooks.json`;
 2. Delete the `[mcp_servers.memory_palace_recall]` stanza from `~/.codex/config.toml`;
 3. If launchd-resident: `launchctl unload -w <plist>` and delete the plist;
 4. Claude Code (profiles B/C): from `~/.claude/settings.json` delete the `PreCompact` and `SessionEnd` entries running `cc_capture_hook_runner.py` and the `SessionStart` entry running `cc_session_start_reminder.zsh`; from `~/.claude.json` delete `mcpServers.memory-palace-recall` (or run `claude mcp remove memory-palace-recall -s user`); optionally delete the pointer directory `~/.claude/memory-palace-sessions/`;

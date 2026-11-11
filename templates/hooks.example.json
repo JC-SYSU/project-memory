@@ -23,6 +23,17 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{PYTHON}} -B {{INSTALL_DIR}}/src/codex_sessionend_hook_runner.py",
+            "timeout": 3
+          }
+        ]
+      }
     ]
   }
 }
