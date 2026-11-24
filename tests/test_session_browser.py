@@ -223,8 +223,9 @@ class SessionExportTests(SessionBrowserTests):
         self.assertIn("## [0] 用户", text)
         self.assertIn("[image/png base64 已省略]", text)
         self.assertNotIn("iVBORw0KGgo", text)
-        self.assertEqual(os.stat(export.path).st_mode & 0o777, 0o600)
-        self.assertEqual(os.stat(self.export_dir).st_mode & 0o777, 0o700)
+        if os.name != "nt":  # Windows confidentiality depends on the temp directory ACL.
+            self.assertEqual(os.stat(export.path).st_mode & 0o777, 0o600)
+            self.assertEqual(os.stat(self.export_dir).st_mode & 0o777, 0o700)
 
     def test_large_session_is_flagged_with_contiguous_chunks(self) -> None:
         sid = "99999999-9999-9999-9999-999999999999"

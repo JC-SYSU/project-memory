@@ -100,6 +100,7 @@ def _try_process_lock(lock_path: str):
     lock ``msvcrt.locking(LK_NBLCK)`` on the first byte instead (a lock file
     shorter than one byte cannot be locked, so one NUL byte is written).
     """
+    os.makedirs(os.path.dirname(lock_path) or ".", mode=0o700, exist_ok=True)
     flags = os.O_CREAT | os.O_RDWR
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC

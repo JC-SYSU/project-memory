@@ -308,11 +308,23 @@ def run_once(
 
     # 2. 预处理冻结 Capture；解析/读数失败不推进 cursor。
     try:
-        windows = prepare_codex_capture(
-            job["capture_path"],
-            start_line=start_line,
-            soft_target_chars=soft_target_chars,
-        )
+        try:
+            windows = prepare_codex_capture(
+                job["capture_path"],
+                start_line=start_line,
+                soft_target_chars=soft_target_chars,
+            )
+        except FileNotFoundError:
+            # Keep existing Job paths and identities intact. An old junction or
+            # drive alias can vanish while its database and frozen file still exist.
+            from .project_paths import relocated_codex_capture
+
+            capture = relocated_codex_capture(database_path, job)
+            if capture is None:
+                raise
+            windows = prepare_codex_capture(
+                capture, start_line=start_line, soft_target_chars=soft_target_chars,
+            )
     except NormalizationError as exc:
         return _mark_retryable(
             database_path, job_id, exc.kind, now_epoch,

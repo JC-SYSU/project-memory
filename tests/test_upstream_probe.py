@@ -155,16 +155,31 @@ class UpstreamProbeTests(unittest.TestCase):
 
     def test_cli_passes_against_stub(self) -> None:
         env = dict(os.environ)
-        env.update(self._env)
+        env.update(self._env, PYTHONIOENCODING="gbk:strict")
         completed = subprocess.run(
             [sys.executable, str(ROOT / "scripts" / "test_connection.py")],
             capture_output=True,
             text=True,
+            encoding="gbk",
             env=env,
             timeout=30,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("[OK]", completed.stdout)
         self.assertIn("四项全部通过", completed.stdout)
+        self.assertNotIn(SECRET, completed.stdout)
+
+    def test_cli_failure_under_gbk(self) -> None:
+        _Handler.fail_tools = True
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "test_connection.py")],
+            capture_output=True,
+            encoding="gbk",
+            env={**os.environ, **self._env, "PYTHONIOENCODING": "gbk:strict"},
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertIn("[FAIL]", completed.stdout)
         self.assertNotIn(SECRET, completed.stdout)
 
     def test_cli_reports_missing_config(self) -> None:

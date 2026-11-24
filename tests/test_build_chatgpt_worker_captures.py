@@ -93,6 +93,7 @@ class CompileTests(unittest.TestCase):
 
         self._tmp = tempfile.TemporaryDirectory()
         self.base = Path(self._tmp.name)
+        self.project_path = str(self.base / "project")
         self.sessions = self.base / "sessions"
         self.output = self.base / "worker-captures"
         self.sessions.mkdir()
@@ -122,13 +123,13 @@ class CompileTests(unittest.TestCase):
         )
 
     def compile_markdown(
-        self, body: str, *, project_path: str = "/tmp/p1", name: str = "a.md"
+        self, body: str, *, project_path: str | None = None, name: str = "a.md"
     ) -> tuple[Path, list[str]]:
         write_markdown(self.sessions / name, body=body)
         assignments = self.base / "PROJECT_ASSIGNMENTS.csv"
         assignments_csv(
             assignments,
-            [["1", f"sessions/{name}", "A", "t", "2", "样例项目", project_path, "local", "high", "r"]],
+            [["1", f"sessions/{name}", "A", "t", "2", "样例项目", project_path or self.project_path, "local", "high", "r"]],
         )
         entries = compiler.compile_all(
             assignments_path=assignments,
@@ -140,18 +141,22 @@ class CompileTests(unittest.TestCase):
 
     # ---- required scenarios ----------------------------------------------
 
+    def test_drive_relative_project_is_rejected(self) -> None:
+        with self.assertRaisesRegex(compiler.CompileError, "project_path is not absolute"):
+            self.compile_markdown(self.standard_body(), project_path="C:relative")
+
     def test_three_roles_and_body_headings(self) -> None:
         capture_path, records = self.compile_markdown(self.standard_body())
         self.assertEqual(records[0]["type"], "import_meta")
         self.assertEqual(
-            records[0]["payload"]["target_project_root"], "/tmp/p1"
+            records[0]["payload"]["target_project_root"], self.project_path
         )
         self.assertEqual(records[1]["type"], "session_meta")
         self.assertEqual(
             records[1]["payload"]["id"],
             "chatgpt-web-v1:11111111-2222-3333-4444-555555555555",
         )
-        self.assertEqual(records[1]["payload"]["cwd"], "/tmp/p1")
+        self.assertEqual(records[1]["payload"]["cwd"], self.project_path)
         messages = records[2:]
         self.assertEqual(len(messages), 3)  # body H2 did not split
         user, assistant, custom = messages
@@ -176,7 +181,7 @@ class CompileTests(unittest.TestCase):
 
         # session_meta drives the manual-intake identity path unchanged.
         metadata = read_session_metadata(capture_path)
-        self.assertEqual(metadata.cwd, "/tmp/p1")
+        self.assertEqual(metadata.cwd, self.project_path)
         self.assertEqual(
             metadata.session_id,
             "chatgpt-web-v1:11111111-2222-3333-4444-555555555555",
@@ -234,7 +239,7 @@ class CompileTests(unittest.TestCase):
                 assignments = self.base / f"assign-{name}.csv"
                 assignments_csv(
                     assignments,
-                    [["1", f"sessions/{name}.md", "A", "t", "1", "样例项目", "/tmp/p1", "local", "high", "r"]],
+                    [["1", f"sessions/{name}.md", "A", "t", "1", "样例项目", self.project_path, "local", "high", "r"]],
                 )
                 with self.assertRaises(compiler.CompileError) as ctx:
                     compiler.compile_all(
@@ -259,7 +264,7 @@ class CompileTests(unittest.TestCase):
         assignments = self.base / "assign-badfm.csv"
         assignments_csv(
             assignments,
-            [["1", "sessions/badfm.md", "A", "t", "1", "样例项目", "/tmp/p1", "local", "high", "r"]],
+            [["1", "sessions/badfm.md", "A", "t", "1", "样例项目", self.project_path, "local", "high", "r"]],
         )
         output = self.base / "out-badfm"
         with self.assertRaises(compiler.CompileError) as ctx:
@@ -286,7 +291,7 @@ class CompileTests(unittest.TestCase):
         assignments = self.base / "PROJECT_ASSIGNMENTS.csv"
         assignments_csv(
             assignments,
-            [["1", "sessions/a.md", "A", "t", "3", "样例项目", "/tmp/p1", "local", "high", "r"]],
+            [["1", "sessions/a.md", "A", "t", "3", "样例项目", self.project_path, "local", "high", "r"]],
         )
         output = self.base / "precious"
         output.mkdir()
@@ -331,7 +336,7 @@ class CompileTests(unittest.TestCase):
         assignments = self.base / "PROJECT_ASSIGNMENTS.csv"
         assignments_csv(
             assignments,
-            [["1", "sessions/a.md", "A", "t", "3", "样例项目", "/tmp/p1", "local", "high", "r"]],
+            [["1", "sessions/a.md", "A", "t", "3", "样例项目", self.project_path, "local", "high", "r"]],
         )
         for label, payload in (
             ("wrong-format", '{"format":"some-other-tool","captures":[]}'),

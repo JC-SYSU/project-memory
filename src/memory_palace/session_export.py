@@ -8,7 +8,9 @@ truncates tool output to ~10k tokens), whatever the session size.
 Files live in ``/tmp/memory-palace-sessions/`` (``tempfile.gettempdir()`` on
 non-macOS).  macOS ``tmp_cleaner`` removes stale ``/tmp`` content; this module
 also deletes its own exports older than ``_TTL_SECONDS`` on every call, so
-cleanup never depends on the OS alone.
+cleanup never depends on the OS alone. On Windows, export confidentiality
+depends on the ACL inherited from the temp directory; POSIX mode bits do
+not establish a Windows ACL.
 
 Token counts are estimates (no tokenizer dependency): CJK characters x 0.72 +
 other characters / 2.5, fitted against o200k on local sessions (median error
@@ -144,7 +146,7 @@ def _sweep(directory: str, now: float) -> None:
 
 
 def export_session(project: str, session_id: str) -> SessionExport:
-    """Write the clean conversation to a private temp file and return its size facts."""
+    """Write the clean conversation to a temp file and return its size facts."""
     info = _resolve(_collect(project), session_id)
     if not info.available:
         raise SessionBrowserError("session_unavailable")
@@ -158,7 +160,8 @@ def export_session(project: str, session_id: str) -> SessionExport:
     text = "\n".join(lines) + "\n"
     directory = export_directory()
     os.makedirs(directory, mode=0o700, exist_ok=True)
-    os.chmod(directory, 0o700)
+    if os.name != "nt":
+        os.chmod(directory, 0o700)
     now = time.time()
     _sweep(directory, now)
     stamp = time.strftime("%Y%m%dT%H%M%S", time.localtime(now))

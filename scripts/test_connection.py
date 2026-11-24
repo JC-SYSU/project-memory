@@ -33,8 +33,8 @@ from memory_palace.upstream_probe import (  # noqa: E402
     probe_tool_calling,
 )
 
-_ERR = "\033[31m✘\033[0m"
-_OK = "\033[32m✔\033[0m"
+_ERR = "[FAIL]"
+_OK = "[OK]"
 _TIMEOUT_SECONDS = 60.0
 
 
@@ -87,4 +87,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Upstream errors and user-supplied values need not fit a legacy code page.
+    sys.stdout.reconfigure(errors="backslashreplace")
     raise SystemExit(main())

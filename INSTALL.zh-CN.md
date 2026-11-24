@@ -177,6 +177,8 @@ MODEL 未给时会尝试探测并取列表第一个。`--skip-write` 只收集�
 2. Codex 从 macOS App 启动：`launchctl setenv PROJECT_MEMORY_API_KEY sk-...`（重启 App 生效；`launchctl getenv` 可查）。
 3. launchd 常驻 worker：同一 `launchctl setenv`，或在 plist 的 `EnvironmentVariables` 键内写明。
 
+Windows 使用系统的「用户环境变量」配置上述变量，而不是写入 `~/.zshenv`。完全退出并重启 Codex Desktop 后，用 `memory_upstream_check` 的默认预览检查 MCP 子进程是否看到了配置；不要确认真实探针，也不要分享预览中的端点或模型。已有接入不会被安装器覆盖；请在相应的 `[mcp_servers.memory_palace_recall]` 段手动合并模板的 `env_vars` 名称列表，不要把变量值或密钥写进 TOML。这个列表只能转发 Codex 本身已获得的变量，不能弥补 Desktop 启动环境缺失；MCP 预览也不证明 hook 触发的 worker 看到了同样的变量。
+
 设置完成后验证当前进程环境：
 
 ```bash
@@ -250,7 +252,7 @@ python3 cc-integration/cc_backfill_driver.py             # 2) 确认后正式入
 
 recall MCP server 还提供两个诊断工具。它们对数据库都是只读的。
 
-**`memory_health`** 扫描 `$HOME` 5 层内所有 `.memory-palace/memory-palace.sqlite3`，返回固定格式的 Markdown 报告：
+**`memory_health`** 只读扫描当前用户目录和 `PROJECT_MEMORY_HEALTH_ROOTS` 显式添加的绝对路径（Windows 用分号分隔，其他系统用冒号）。按实际路径去重；Windows 每个根最多 8 层，其他系统 5 层。不自动遍历其他用户目录；0 个库或扫描不完整时不会报告「正常」。返回固定格式的 Markdown 报告：
 
 - 抽取队列状态与合计；
 - 审查队列状态与合计；
@@ -340,6 +342,7 @@ Claude Code 项（形态 B/C）：
 | `codex mcp list` 里 memory_palace_recall 报错 | `command` 解释器与 Codex 运行环境不一致（venv 未激活等），手动编辑 config.toml 修正；`startup_timeout_sec` 默认 10s 不够则调大 |
 | MCP 工具能列出但调用超时 | `tool_timeout_sec` 默认 30s，大库召回按需调大 |
 | 入队成功、抽取一直失败 | 最常见原因：环境变量只设在终端、未进入 Codex/launchd 进程环境。对照第 4 节注入方式逐路检查 |
+| junction 或盘符别名消失后 worker 报 `capture_unavailable` | 找到实际项目库后，worker 可读取库旁边同名且会话 ID 一致的冻结 Codex Capture。保留实际库和同目录 `captures`；已终态失败的任务不会自动重新入队。 |
 | `pip install` 失败 | pip 源不可达；确认 `mcp`/`pydantic`（Python < 3.14 时还有 `zstandard`）可从目标源安装 |
 | 安装脚本解析失败 | 已自动回滚备份；手工对比 `.bak-*` 恢复 |
 | 请求 404 | `BASE_URL` 填了完整端点路径（多拼了一次 `/chat/completions`），回到第 4 节核对 |

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shlex
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -39,7 +41,23 @@ CONFIG = CODEX_HOME / "config.toml"
 
 def render(template_name: str) -> str:
     source = (TEMPLATES / template_name).read_text(encoding="utf-8")
-    return source.replace("{{INSTALL_DIR}}", str(REPO)).replace("{{PYTHON}}", PYTHON)
+    if template_name == "hooks.example.json":
+        data = json.loads(source)
+        for groups in data["hooks"].values():
+            for group in groups:
+                for hook in group["hooks"]:
+                    rel = hook["command"].removeprefix("{{PYTHON}} -B {{INSTALL_DIR}}/")
+                    script = str(REPO / rel)
+                    if os.name == "nt":
+                        # Codex's default Windows command-hook shell is cmd.exe.
+                        hook["command"] = f'"{PYTHON}" -B "{script}"'
+                    else:
+                        hook["command"] = shlex.join((PYTHON, "-B", script))
+        return json.dumps(data, ensure_ascii=False)
+    # TOML basic strings use the same backslash/quote escapes as JSON.
+    return source.replace(
+        "{{INSTALL_DIR}}", json.dumps(str(REPO), ensure_ascii=False)[1:-1]
+    ).replace("{{PYTHON}}", json.dumps(PYTHON, ensure_ascii=False)[1:-1])
 
 
 def backup(target: Path) -> str | None:
@@ -164,4 +182,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(errors="backslashreplace")
     raise SystemExit(main())

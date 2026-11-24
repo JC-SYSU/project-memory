@@ -1,6 +1,6 @@
 """install.py / install_claude.py: relocation, Claude Code merges, skill copy, dry-run safety.
 
-Every test runs against a temporary HOME; nothing touches the real ~/.codex or ~/.claude.
+Every test runs against a temporary user directory; nothing touches the real ~/.codex or ~/.claude.
 """
 
 from __future__ import annotations
@@ -12,7 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
+from tomllib import loads
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,6 +23,7 @@ if str(SCRIPTS) not in sys.path:
 
 import install  # noqa: E402
 import install_claude  # noqa: E402
+import install_codex  # noqa: E402
 
 PY = "/usr/bin/python3-example"
 
@@ -30,6 +32,17 @@ class _TempHome(unittest.TestCase):
     def setUp(self) -> None:
         self.home = Path(tempfile.mkdtemp(prefix="pm-install-"))
         self.addCleanup(shutil.rmtree, self.home, True)
+
+    def home_env(self) -> dict[str, str]:
+        return {"HOME": str(self.home), "USERPROFILE": str(self.home)}
+
+    def symlink(self, target: Path, link: Path, *, directory: bool = False) -> None:
+        try:
+            os.symlink(target, link, target_is_directory=directory)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                self.skipTest("symbolic links require Windows Developer Mode or elevated privileges")
+            raise
 
     def write_json(self, path: Path, data: dict) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +59,6 @@ class RelocateTests(_TempHome):
         (where / "src").mkdir()
         (where / "src" / "a.py").write_text("x = 1\n")
         (where / "dirty.txt").write_text("uncommitted\n")
-        os.symlink("src/a.py", where / "link.py")
         return where
 
     def test_standard_location_prefers_codex(self) -> None:
@@ -61,8 +73,16 @@ class RelocateTests(_TempHome):
         self.assertTrue(moved)
         self.assertFalse(source.exists())
         self.assertEqual(install._manifest(target), before)
-        self.assertTrue((target / "link.py").is_symlink())
         self.assertEqual((target / "dirty.txt").read_text(), "uncommitted\n")
+
+    def test_relocation_preserves_symlink(self) -> None:
+        source = self.make_repo(self.home / "with-link")
+        target = self.home / "relocated"
+        self.symlink(Path("src/a.py"), source / "link.py")
+        _, moved = install.relocate(source, target, apply=True)
+        self.assertTrue(moved)
+        self.assertTrue((target / "link.py").is_symlink())
+        self.assertEqual((target / "link.py").read_text(), "x = 1\n")
 
     def test_dry_run_changes_nothing(self) -> None:
         source = self.make_repo(self.home / "src-repo")
@@ -113,7 +133,7 @@ class RelocateTests(_TempHome):
 
 
 class ClaudeMergeTests(_TempHome):
-    def incoming(self, repo: Path = Path("/opt/pm")) -> tuple[dict, dict]:
+    def incoming(self, repo: PurePath = PurePosixPath("/opt/pm")) -> tuple[dict, dict]:
         base = install_claude.render(ROOT / "templates" / "claude.example.json", repo, PY)
         return base["hooks"], base["mcpServers"][install_claude.MCP_NAME]
 
@@ -167,7 +187,8 @@ class ClaudeMergeTests(_TempHome):
     def test_mcp_added_with_python_and_other_keys_kept(self) -> None:
         target = self.home / ".claude.json"
         self.write_json(target, {"numStartups": 7, "mcpServers": {"other": {"command": "x"}}})
-        target.chmod(0o600)
+        if os.name != "nt":
+            target.chmod(0o600)
         _, server = self.incoming()
         install_claude.merge_mcp(target, server, apply=True)
         data = self.read_json(target)
@@ -176,7 +197,8 @@ class ClaudeMergeTests(_TempHome):
         entry = data["mcpServers"][install_claude.MCP_NAME]
         self.assertEqual(entry["command"], "/opt/pm/cc-integration/cc_memory_palace_recall_wrapper.zsh")
         self.assertEqual(entry["env"], {"PROJECT_MEMORY_PYTHON": PY})
-        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        if os.name != "nt":
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
     def test_existing_mcp_server_left_alone(self) -> None:
         target = self.home / ".claude.json"
@@ -187,11 +209,40 @@ class ClaudeMergeTests(_TempHome):
         self.assertIn("already present", messages[0])
 
 
+class CodexTemplateTests(unittest.TestCase):
+    def test_windows_paths_survive_json_and_toml(self) -> None:
+        repo = PureWindowsPath("D:/Projects with spaces/记忆宫殿")
+        python = r"C:\Program Files\Python\python.exe"
+        with mock.patch.object(install_codex.os, "name", "nt"), \
+                mock.patch.object(install_codex, "REPO", repo), \
+                mock.patch.object(install_codex, "TEMPLATES", ROOT / "templates"), \
+                mock.patch.object(install_codex, "PYTHON", python):
+            hooks = json.loads(install_codex.render("hooks.example.json"))["hooks"]
+            config = loads(install_codex.render("config.mcp.example.toml"))
+        server = config["mcp_servers"]["memory_palace_recall"]
+        self.assertEqual(server["command"], python)
+        self.assertEqual(server["args"][0], "-B")
+        self.assertEqual(PureWindowsPath(server["args"][1]), repo / "src/memory_palace_recall_mcp_server.py")
+        self.assertEqual(
+            hooks["SessionEnd"][0]["hooks"][0]["command"],
+            f'"{python}" -B "{repo / "src" / "codex_sessionend_hook_runner.py"}"',
+        )
+        self.assertEqual(set(server["env_vars"]), {*install.ENV_NAMES, "PROJECT_MEMORY_HEALTH_ROOTS"})
+
+    def test_claude_json_preserves_windows_paths(self) -> None:
+        repo = PureWindowsPath("D:/Projects with spaces/记忆宫殿")
+        python = r"C:\Program Files\Python\python.exe"
+        data = install_claude.render(ROOT / "templates" / "claude.example.json", repo, python)
+        self.assertEqual(
+            data["mcpServers"][install_claude.MCP_NAME]["env"]["PROJECT_MEMORY_PYTHON"], python
+        )
+
+
 class SkillTests(_TempHome):
     def test_copied_once_when_skill_dirs_are_linked(self) -> None:
         codex_skills = self.home / ".codex" / "skills"
         codex_skills.mkdir(parents=True)
-        os.symlink(codex_skills, self.home / ".claude-skills")
+        self.symlink(codex_skills, self.home / ".claude-skills", directory=True)
         install.install_skill(ROOT, [codex_skills, self.home / ".claude-skills"], apply=True)
         self.assertTrue((codex_skills / "continue-session" / "SKILL.md").exists())
         messages = install.install_skill(ROOT, [codex_skills, self.home / ".claude-skills"], apply=True)
@@ -212,33 +263,38 @@ class MainTests(_TempHome):
         bin_dir = self.home / "bin"
         bin_dir.mkdir()
         for name in names:
-            stub = bin_dir / name
-            stub.write_text("#!/bin/sh\nexit 0\n")
-            stub.chmod(0o755)
-        return f"{bin_dir}:/usr/bin:/bin"
+            if os.name == "nt":
+                (bin_dir / f"{name}.cmd").write_text("@exit /b 0\n")
+            else:
+                stub = bin_dir / name
+                stub.write_text("#!/bin/sh\nexit 0\n")
+                stub.chmod(0o755)
+        return str(bin_dir)
 
     def snapshot(self) -> list[str]:
         return sorted(str(p.relative_to(self.home)) for p in self.home.rglob("*"))
 
     def test_dry_run_writes_nothing_and_shows_new_location(self) -> None:
-        env = {**os.environ, "HOME": str(self.home), "PATH": self.fake_clients("codex", "claude")}
+        env = {**os.environ, **self.home_env(), "PATH": self.fake_clients("codex", "claude")}
         before = self.snapshot()
         result = subprocess.run([sys.executable, "-B", str(SCRIPTS / "install.py")],
                                 env=env, capture_output=True, text=True, check=True)
         self.assertEqual(self.snapshot(), before)
         self.assertIn("profile B", result.stdout)
-        self.assertIn(str(self.home / ".codex" / "memory-palace" / "cc-integration"), result.stdout)
+        location = self.home / ".codex" / "memory-palace"
+        self.assertIn(f"standard location is {location}", result.stdout)
+        self.assertIn("cc-integration", result.stdout)
         self.assertTrue(ROOT.exists())
 
     def test_no_client_stops(self) -> None:
-        env = {**os.environ, "HOME": str(self.home), "PATH": self.fake_clients()}
+        env = {**os.environ, **self.home_env(), "PATH": self.fake_clients()}
         result = subprocess.run([sys.executable, "-B", str(SCRIPTS / "install.py")],
                                 env=env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
 
     def test_apply_keep_location_profile_c(self) -> None:
         argv = ["install.py", "--apply", "--keep-location"]
-        with mock.patch.dict(os.environ, {"HOME": str(self.home)}), \
+        with mock.patch.dict(os.environ, self.home_env()), \
                 mock.patch.object(sys, "argv", argv), \
                 mock.patch.object(install, "detect", return_value=(False, True)), \
                 mock.patch.object(install, "pip_install", return_value=[]), \

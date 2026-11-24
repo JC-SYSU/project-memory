@@ -4,5 +4,13 @@
 [mcp_servers.memory_palace_recall]
 command = "{{PYTHON}}"
 args = ["-B", "{{INSTALL_DIR}}/src/memory_palace_recall_mcp_server.py"]
+# Forward these names from Codex's process environment; never put keys here.
+env_vars = [
+    "PROJECT_MEMORY_BASE_URL",
+    "PROJECT_MEMORY_API_KEY",
+    "PROJECT_MEMORY_MODEL",
+    "PROJECT_MEMORY_REASONING_EFFORT",
+    "PROJECT_MEMORY_HEALTH_ROOTS",
+]
 startup_timeout_sec = 10.0
 tool_timeout_sec = 30.0

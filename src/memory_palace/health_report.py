@@ -30,6 +30,8 @@ __all__ = [
 STATE_DIRECTORY = ".memory-palace"
 DATABASE_NAME = "memory-palace.sqlite3"
 DEFAULT_MAX_DEPTH = 5
+WINDOWS_MAX_DEPTH = 8
+HEALTH_ROOTS_ENV = "PROJECT_MEMORY_HEALTH_ROOTS"
 REVIEW_STATES = ("queued", "committed")
 MAX_FAILED_DETAILS = 50
 
@@ -69,6 +71,7 @@ class HealthReport:
     libraries: list[LibraryHealth]
     drainer: str
     scan_errors: list[str] = field(default_factory=list)
+    extra_roots: tuple[Path, ...] = ()
 
 
 def _read_only_uri(database_path: Path) -> str:
@@ -81,7 +84,9 @@ def _connect(database_path: Path) -> sqlite3.Connection:
     return connection
 
 
-def discover_databases(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> list[Path]:
+def discover_databases(
+    root: Path, max_depth: int = DEFAULT_MAX_DEPTH, *, onerror: Callable[[OSError], None] | None = None
+) -> list[Path]:
     """Return unique database files under *root* within the depth limit.
 
     ``max_depth`` counts the database file itself: root is depth 0, so the
@@ -93,11 +98,8 @@ def discover_databases(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> list[P
 
     found: dict[str, Path] = {}
 
-    def ignore_walk_error(_: OSError) -> None:
-        return None
-
     for current, directories, files in os.walk(
-        root, followlinks=False, onerror=ignore_walk_error
+        root, followlinks=False, onerror=onerror
     ):
         current_path = Path(current)
         try:
@@ -107,7 +109,7 @@ def discover_databases(root: Path, max_depth: int = DEFAULT_MAX_DEPTH) -> list[P
         if current_path.name == STATE_DIRECTORY and DATABASE_NAME in files:
             if depth + 1 <= max_depth:
                 database = current_path / DATABASE_NAME
-                found.setdefault(os.path.realpath(database), database)
+                found.setdefault(os.path.normcase(os.path.realpath(database)), database)
         if depth >= max_depth - 1:
             directories[:] = []
     return sorted(found.values(), key=os.fspath)
@@ -176,8 +178,7 @@ def _library_name(database_path: Path, root: Path) -> str:
         relative = project_directory.relative_to(root)
     except ValueError:
         return os.fspath(project_directory)
-    name = os.fspath(relative)
-    return name if name else "."
+    return relative.as_posix()
 
 
 def collect_library(database_path: Path, root: Path) -> LibraryHealth:
@@ -243,22 +244,51 @@ def detect_drainer(
 def build_health_report(
     root: Path | str | None = None,
     *,
-    max_depth: int = DEFAULT_MAX_DEPTH,
+    max_depth: int | None = None,
+    extra_roots: Iterable[Path | str] = (),
     now: datetime | None = None,
     drainer_probe: Callable[[], str | None] | None = None,
 ) -> HealthReport:
-    root_path = Path(root).expanduser().resolve() if root is not None else Path.home().resolve()
-    databases = discover_databases(root_path, max_depth)
-    libraries = [collect_library(database, root_path) for database in databases]
+    if max_depth is None:
+        max_depth = WINDOWS_MAX_DEPTH if os.name == "nt" else DEFAULT_MAX_DEPTH
+    if root is None:
+        root = Path.home()
+        configured = os.environ.get(HEALTH_ROOTS_ENV, "").split(os.pathsep)
+        extra_roots = (*extra_roots, *(value for value in configured if value))
+    root_path = Path(root).expanduser()
+
+    scan_errors: list[str] = []
+    scanned_roots: list[Path] = []
+    seen_roots: set[Path] = set()
+    databases: dict[str, Path] = {}
+
+    for index, entry in enumerate((root_path, *extra_roots)):
+        path = Path(entry).expanduser()
+        try:
+            if not path.is_absolute():
+                raise OSError(f"scan root must be absolute: {path}")
+            path = path.resolve()
+            if path in seen_roots:
+                continue
+            seen_roots.add(path)
+            if index == 0:
+                root_path = path
+            else:
+                scanned_roots.append(path)
+            for database in discover_databases(path, max_depth, onerror=lambda exc: scan_errors.append(str(exc))):
+                databases.setdefault(os.path.normcase(os.path.realpath(database)), database)
+        except (OSError, RuntimeError) as exc:
+            scan_errors.append(str(exc))
+
     return HealthReport(
         generated_at=now or datetime.now(),
         root=root_path,
         max_depth=max_depth,
-        libraries=libraries,
+        libraries=[collect_library(database, root_path) for database in databases.values()],
         drainer=detect_drainer(drainer_probe),
-        scan_errors=[lib.read_error for lib in libraries if lib.read_error],
+        scan_errors=scan_errors,
+        extra_roots=tuple(scanned_roots),
     )
-
 
 def _unknown_states(
     counts: Mapping[str, int], known: Iterable[str]
@@ -291,6 +321,8 @@ def _attention_reason_text(report: HealthReport) -> str:
             other_reasons.append(f"{unfinished} 个任务在排队，后台抽取进程状态未知")
         else:
             other_reasons.append(f"{unfinished} 个任务在排队，但后台抽取进程没有运行")
+    if report.scan_errors:
+        other_reasons.append("扫描未完整完成")
     scan_error_count = sum(1 for lib in report.libraries if lib.read_error)
     if scan_error_count:
         other_reasons.append(f"{scan_error_count} 个库读取失败")
@@ -355,6 +387,8 @@ def _action_sentence(report: HealthReport) -> str:
         return "处理待人工审查的记录。"
     if unfinished and report.drainer != "running":
         return "启动后台抽取进程，或检查它是否异常退出。"
+    if report.scan_errors:
+        return "检查扫描根目录或目录读取权限。"
     if any(lib.read_error for lib in report.libraries):
         return "检查无法读取的库和文件权限。"
     if any(
@@ -370,8 +404,14 @@ def render_markdown(report: HealthReport) -> str:
     """Render the fixed five-section Markdown report."""
     reason_text = _attention_reason_text(report)
     attention = bool(reason_text)
-    root_label = (
-        "$HOME" if report.root == Path.home().resolve() else os.fspath(report.root)
+    roots_label = "、".join(
+        f"`{'$HOME' if root == Path.home().resolve() else os.fspath(root)}`"
+        for root in (report.root, *report.extra_roots)
+    )
+    conclusion = (
+        f"**结论：需处理**（{reason_text}）" if attention
+        else "**结论：正常**" if report.libraries
+        else "**结论：在扫描范围内未发现记忆库**"
     )
 
     extraction_total = sum(
@@ -399,13 +439,9 @@ def render_markdown(report: HealthReport) -> str:
     lines: list[str] = [
         f"## 记忆宫殿健康报告 — {report.generated_at.strftime('%Y-%m-%d %H:%M')}",
         "",
-        (
-            "**结论：正常**"
-            if not reason_text
-            else f"**结论：需处理**（{reason_text}）"
-        ),
+        conclusion,
         "",
-        f"扫描：`{root_label}` {report.max_depth} 层内命中的 "
+        f"扫描：{roots_label} 各 {report.max_depth} 层内命中的 "
         f"`.memory-palace/memory-palace.sqlite3` 共 {len(report.libraries)} 个库，"
         "只读查询，未改动任何数据。",
         "",
@@ -518,6 +554,8 @@ def render_markdown(report: HealthReport) -> str:
                 f"- 后台抽取进程：{_drainer_label(report.drainer)}；"
                 "当前没有未完成任务。"
             )
+        if report.scan_errors:
+            lines.append(f"- 扫描失败（{len(report.scan_errors)} 处）：{report.scan_errors[0]}。")
         scan_errors = [
             f"{lib.name} 库（{lib.read_error}）"
             for lib in report.libraries

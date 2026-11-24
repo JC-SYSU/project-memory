@@ -29,15 +29,16 @@ import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 
 MCP_NAME = "memory-palace-recall"
 _SCRIPT_TOKEN = re.compile(r"[^\s'\"]+\.(?:py|zsh|sh)\b")
 
 
-def render(template: Path, repo: Path, python: str) -> dict:
+def render(template: Path, repo: PurePath, python: str) -> dict:
     text = template.read_text(encoding="utf-8")
-    text = text.replace("{{INSTALL_DIR}}", str(repo)).replace("{{PYTHON}}", python)
+    text = text.replace("{{INSTALL_DIR}}", json.dumps(str(repo), ensure_ascii=False)[1:-1])
+    text = text.replace("{{PYTHON}}", json.dumps(python, ensure_ascii=False)[1:-1])
     return json.loads(text)
 
 

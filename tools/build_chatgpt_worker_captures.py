@@ -270,7 +270,7 @@ def compile_one(
     if not source.is_file():
         raise CompileError(source, 0, "source Markdown not found")
     target_root = row["project_path"].strip()
-    if not target_root.startswith("/"):
+    if not Path(target_root).is_absolute():
         raise CompileError(source, 0, f"project_path is not absolute: {target_root!r}")
 
     transcript = parse_session_markdown(source)

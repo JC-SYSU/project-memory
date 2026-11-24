@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,7 +108,7 @@ class SessionEndTests(unittest.TestCase):
         second = self.accept(make_payload(self.project, self.rollout))
         self.assertEqual(second.disposition, "accepted")
         self.assertNotEqual(second.job_id, first.job_id)
-        with sqlite3.connect(self.db) as conn:
+        with closing(sqlite3.connect(self.db)) as conn:
             jobs = conn.execute(
                 "SELECT count(*), count(DISTINCT job_id) FROM extraction_jobs"
             ).fetchone()
@@ -132,7 +133,7 @@ class SessionEndTests(unittest.TestCase):
 
     def test_capture_without_job_is_conflict(self) -> None:
         receipt = self.accept(make_payload(self.project, self.rollout))
-        with sqlite3.connect(self.db) as conn:
+        with closing(sqlite3.connect(self.db)) as conn:
             conn.execute("DELETE FROM extraction_jobs")
             conn.commit()  # 只剩 Capture，没有 Job
         with self.assertRaises(SessionEndConflictError):
@@ -156,7 +157,7 @@ class SessionEndTests(unittest.TestCase):
         bad = self._run_runner("not json", env_extra)
         self.assertEqual(bad.returncode, 0)
         self.assertIn('"status":"error"', bad.stderr)
-        with sqlite3.connect(self.db) as conn:
+        with closing(sqlite3.connect(self.db)) as conn:
             (count,) = conn.execute("SELECT count(*) FROM extraction_jobs").fetchone()
         self.assertEqual(count, 1)
 

@@ -72,7 +72,7 @@ QUERY_GROUPS_DESCRIPTION = (
     "可使用中英文、缩写或书写变体；不要放四个不同主题。"
 )
 HEALTH_TOOL_DESCRIPTION = (
-    "只读扫描本机所有项目的 .memory-palace 记忆库，返回固定格式的健康报告"
+    "只读扫描用户目录及 PROJECT_MEMORY_HEALTH_ROOTS 配置根目录内的 .memory-palace 记忆库，返回固定格式的健康报告"
     "（抽取队列、审查队列、需要处理的库、失败明细、备注）。"
     "用户问健康检查、队列状态、有没有失败、多少待审、记忆是否正常时调用。"
     "无参数即可；不写库、不联网。返回 Markdown，原样转述。"

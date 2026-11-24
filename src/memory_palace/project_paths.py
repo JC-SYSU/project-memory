@@ -7,6 +7,7 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from os import PathLike
+from pathlib import Path
 from urllib.parse import quote
 
 from .rollout_io import RolloutDecoderUnavailable, open_rollout_text
@@ -143,6 +144,34 @@ def _ensure_directory(path: str) -> None:
             raise ProjectPathError("project_state_path_invalid")
         return
     os.mkdir(path)
+
+
+def relocated_codex_capture(database_path: str, job: dict) -> Path | None:
+    """Recover a project-local Codex Capture when a recorded alias disappears."""
+    job_id = job["job_id"]
+    if not job_id.startswith(("codex-precompact-", "codex-sessionend-")):
+        return None
+    recorded = Path(job["capture_path"])
+    if not recorded.is_absolute() or recorded.name != f"{job_id}.jsonl":
+        return None
+    project = Path(job["project_id"])
+    if recorded != project / _STATE_DIRECTORY / _CAPTURES_DIRECTORY / recorded.name:
+        return None
+
+    try:
+        database = Path(database_path).resolve(strict=True)
+        if database.name != _DATABASE_NAME or database.parent.name != _STATE_DIRECTORY:
+            return None
+        capture_dir = database.parent / _CAPTURES_DIRECTORY
+        candidate = (capture_dir / recorded.name).resolve(strict=True)
+        # Never substitute a Capture from outside the actual database's state directory.
+        if candidate.parent != capture_dir:
+            return None
+        if read_session_metadata(candidate).session_id == job["source_session_id"]:
+            return candidate
+    except (OSError, RuntimeError):
+        pass
+    return None
 
 
 def ensure_project_state(cwd: object) -> ProjectPaths:

@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,7 +107,7 @@ class ChatGPTArchivalPolicyTests(unittest.TestCase):
             run_id="codex-window",
         )
 
-        with sqlite3.connect(self.database) as conn:
+        with closing(sqlite3.connect(self.database)) as conn:
             self.assertEqual(
                 conn.execute(
                     "SELECT status FROM records WHERE source_session_id = ?",

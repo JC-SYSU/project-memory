@@ -177,6 +177,8 @@ Injection targets (by how Codex/worker is started; usually more than one; **prof
 2. Codex started from a macOS app: `launchctl setenv PROJECT_MEMORY_API_KEY sk-...` (restart the app; check with `launchctl getenv`).
 3. launchd-resident worker: same `launchctl setenv`, or the `EnvironmentVariables` key in the plist.
 
+On Windows, set the variables in Windows user environment settings rather than in `~/.zshenv`, then fully exit and relaunch Codex Desktop. Check whether the MCP process received the variables with the default preview of `memory_upstream_check`; do not confirm a live probe just to check inheritance. Existing registrations are not overwritten: merge the template's `env_vars` name list into `[mcp_servers.memory_palace_recall]` yourself. Do not store values or keys in TOML. The allowlist forwards only variables that reach Codex; it cannot fix a missing Desktop launch environment. The MCP preview does not prove that a hook-spawned worker received the same variables.
+
 Verify in the current process environment:
 
 ```bash
@@ -249,7 +251,7 @@ Profile B can run both. Extraction itself is executed serially by the drainer an
 
 The recall MCP server also exposes two diagnostic tools. Both are read-only with respect to the databases.
 
-**`memory_health`** scans every `.memory-palace/memory-palace.sqlite3` under your home directory (5 levels deep) and returns a fixed Markdown report:
+**`memory_health`** scans your home and absolute roots explicitly listed in `PROJECT_MEMORY_HEALTH_ROOTS` (semicolon-separated on Windows, colon-separated elsewhere). It deduplicates the same database and scans to depth 8 per root on Windows, 5 elsewhere. It does not automatically search other profiles or report an empty or incomplete scan as healthy. It returns a fixed Markdown report:
 
 - extraction queue states and totals;
 - review queue states and totals;
@@ -274,7 +276,7 @@ The MCP tool and the CLI share the same probe implementation (`src/memory_palace
 
 ### Session tools
 
-**`memory_list_sessions`** and **`memory_read_session`** are read-only and make no model calls. They read `~/.codex/sessions`, `~/.codex/archived_sessions` (`.jsonl` and `.jsonl.zst`) and `~/.claude/projects/<encoded cwd>`, matching the recorded cwd exactly. `memory_read_session` writes the clean conversation to a mode-600 file in `/tmp/memory-palace-sessions/` and returns only metadata, the path, an estimated token count, and — above 100k tokens — chunk line ranges of about 60k tokens each. Claude Code persists MCP results over 25k tokens to disk and Codex truncates tool output at about 10k tokens, so the body never goes through the tool result. Pass `project` to read a session that belongs to another project. The same reader is available as a CLI:
+**`memory_list_sessions`** and **`memory_read_session`** are read-only and make no model calls. They read `~/.codex/sessions`, `~/.codex/archived_sessions` (`.jsonl` and `.jsonl.zst`) and `~/.claude/projects/<encoded cwd>`, matching the recorded cwd exactly. `memory_read_session` writes the clean conversation to a file in the system temp folder under `memory-palace-sessions` (mode 600 on POSIX; Windows inherits the temp folder ACL and does not tighten it, so verify the folder is not shared before exporting sensitive content) and returns only metadata, the path, an estimated token count, and — above 100k tokens — chunk line ranges of about 60k tokens each. Claude Code persists MCP results over 25k tokens to disk and Codex truncates tool output at about 10k tokens, so the body never goes through the tool result. Pass `project` to read a session that belongs to another project. The same reader is available as a CLI:
 
 ```bash
 python3 src/memory_palace_sessions.py list
@@ -339,6 +341,7 @@ Sessions whose cwd is in a temp directory (prefixes `/tmp`, `/var`, and macOS `/
 | `codex mcp list` shows memory_palace_recall error | `command` interpreter differs from Codex's runtime (unactivated venv, etc.); hand-edit config.toml; raise `startup_timeout_sec` from 10s if needed |
 | MCP tools listed but calls time out | `tool_timeout_sec` default 30s; raise for huge recalls |
 | enqueue works, extraction always fails | the classic: env vars set only in the terminal, not in the Codex/launchd process env. Check every injection rail in section 4 |
+| worker reports `capture_unavailable` after a junction or drive alias disappears | the worker can use the same Codex Capture beside the discovered project database, if its session identity matches. Keep the physical database and its `captures` directory together. Jobs already in terminal `failed` are not automatically requeued. |
 | `pip install` fails | pip source unreachable; `mcp`/`pydantic` (and `zstandard` on Python < 3.14) must be installable from your source |
 | installer parse failure | it auto-restored the backup; compare with the `.bak-*` to confirm |
 | HTTP 404 on requests | `BASE_URL` filled with a full endpoint path (appended twice); see section 4 fill-in rules |

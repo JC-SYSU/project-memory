@@ -5,7 +5,12 @@ from __future__ import annotations
 import asyncio
 import sys
 import unittest
+from datetime import timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -71,6 +76,34 @@ class McpToolContractTests(unittest.TestCase):
         self.assertTrue(annotations.openWorldHint)
         self.assertIn("confirm", tool.inputSchema.get("properties", {}))
         self.assertIn("confirm=true", tool.description or "")
+
+
+class McpUpstreamStdioTests(unittest.IsolatedAsyncioTestCase):
+    async def test_child_previews_inherited_values_without_showing_key(self) -> None:
+        env = {
+            "PROJECT_MEMORY_BASE_URL": "http://127.0.0.1:1/v1",
+            "PROJECT_MEMORY_API_KEY": "stdio-test-key",
+            "PROJECT_MEMORY_MODEL": "stdio-test-model",
+            "PROJECT_MEMORY_REASONING_EFFORT": "low",
+        }
+        with TemporaryDirectory() as tmp:
+            params = StdioServerParameters(
+                command=sys.executable,
+                args=["-B", str(SRC / "memory_palace_recall_mcp_server.py")],
+                cwd=tmp,
+                env=env,
+            )
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=10)) as client:
+                    await client.initialize()
+                    result = await client.call_tool("memory_upstream_check", {})
+        self.assertFalse(result.isError)
+        text = result.content[0].text
+        self.assertIn("stdio-test-model", text)
+        self.assertIn("reasoning_effort：low", text)
+        self.assertIn("API Key：已配置", text)
+        self.assertIn("尚未发起请求", text)
+        self.assertNotIn(env["PROJECT_MEMORY_API_KEY"], text)
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ class RolloutZstTests(unittest.TestCase):
         self.assertFalse(is_rollout_file_name("rollout-x.jsonl.zst.tmp"))
 
     def test_metadata_reads_identically_from_plain_and_zst(self) -> None:
-        raw = _rollout_bytes("s1", "/tmp/project")
+        raw = _rollout_bytes("s1", str(self.base / "project"))
         plain = self._write("a/r.jsonl", raw)
         packed = self._write("b/r.jsonl.zst", _compress(raw))
         self.assertEqual(read_session_metadata(plain), read_session_metadata(packed))
@@ -87,7 +87,7 @@ class RolloutZstTests(unittest.TestCase):
             read_session_metadata(bad)
 
     def test_freeze_decompresses_and_capture_normalizes_like_plain(self) -> None:
-        raw = _rollout_bytes("s1", "/tmp/project")
+        raw = _rollout_bytes("s1", str(self.base / "project"))
         packed = self._write("src/r.jsonl.zst", _compress(raw))
         plain = self._write("src/r.jsonl", raw)
         frozen = freeze_capture(packed, self.base / "cap-from-zst.jsonl")
@@ -97,7 +97,7 @@ class RolloutZstTests(unittest.TestCase):
         self.assertEqual([m.role for m in normalize_capture(packed)], ["user", "assistant"])
 
     def test_open_rollout_text_streams_all_lines(self) -> None:
-        raw = _rollout_bytes("s1", "/tmp/project")
+        raw = _rollout_bytes("s1", str(self.base / "project"))
         packed = self._write("r.jsonl.zst", _compress(raw))
         with open_rollout_text(packed) as handle:
             self.assertEqual(handle.read(), raw.decode("utf-8"))

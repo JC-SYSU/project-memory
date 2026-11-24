@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 import sys
 import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from memory_palace.health_report import build_health_report, render_markdown
+from memory_palace.health_report import HEALTH_ROOTS_ENV, build_health_report, render_markdown
 from memory_palace.worker_orchestrator import initialize_worker_database
 
 NOW = datetime(2026, 10, 23, 12, 0)
@@ -197,6 +199,30 @@ class HealthReportTests(unittest.TestCase):
         deep_names = [library.name for library in self._report(max_depth=8).libraries]
         self.assertNotIn("a/b/c/d/e", shallow_names)
         self.assertIn("a/b/c/d/e", deep_names)
+
+    def test_configured_roots_include_deep_libraries_without_duplicates(self) -> None:
+        home = self.root / "home"
+        external = self.root / "external"
+        first = _make_database(home, "a/b/c/d/e/f")
+        second = _make_database(external, "other")
+        configured = os.pathsep.join(map(str, (external, home / "a", external)))
+        with mock.patch.object(Path, "home", return_value=home), \
+                mock.patch.dict(os.environ, {HEALTH_ROOTS_ENV: configured}):
+            report = build_health_report(max_depth=8, now=NOW, drainer_probe=lambda: "none")
+        self.assertCountEqual(
+            [Path(lib.database_path) for lib in report.libraries], [first.resolve(), second.resolve()]
+        )
+        self.assertIn(str(external.resolve()), render_markdown(report))
+
+    def test_missing_root_is_not_reported_as_healthy(self) -> None:
+        report = build_health_report(self.root, extra_roots=[self.root / "missing"])
+        text = render_markdown(report)
+        self.assertIn("扫描未完整完成", text)
+        self.assertIn("扫描失败", text)
+        self.assertNotIn("**结论：正常**", text)
+
+    def test_empty_scan_is_not_reported_as_healthy(self) -> None:
+        self.assertIn("在扫描范围内未发现记忆库", render_markdown(self._report()))
 
     def test_read_only(self) -> None:
         database = _make_database(self.root, "clean")
